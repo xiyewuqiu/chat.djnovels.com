@@ -227,12 +227,28 @@ sudo systemctl start djnovels-appserver
 
 ### 跟上游
 
-上游真正开发的分支是 `dev`，不是 `master`。两个仓库都已配好 `upstream` 远端。
+上游真正开发的分支是 `dev`，不是 `master`。
+
+引擎仓库建议**直接 clone 上游**，不要用 fork，这样它天然零差异：
 
 ```bash
-git -C ../chatapi.djnovels.com fetch upstream --quiet
-git -C ../chatapi.djnovels.com rev-list --count HEAD..upstream/dev   # 落后
-git -C ../chatapi.djnovels.com rev-list --count upstream/dev..HEAD   # 领先，必须是 0
+git clone -b dev https://github.com/juggleim/im-server.git ../chatapi.djnovels.com
+```
+
+这种形态下引擎的远端叫 `origin`，不是 `upstream`。若你用的是自己的 fork，先补一个上游远端：
+
+```bash
+git -C ../chatapi.djnovels.com remote add upstream https://github.com/juggleim/im-server.git
+```
+
+查落后（按你的远端名二选一）：
+
+```bash
+git -C ../chatapi.djnovels.com fetch origin --quiet      # 直接 clone 上游
+# git -C ../chatapi.djnovels.com fetch upstream --quiet   # 用自己的 fork
+
+git -C ../chatapi.djnovels.com rev-list --count HEAD..origin/dev   # 落后
+git -C ../chatapi.djnovels.com rev-list --count origin/dev..HEAD   # 领先，必须是 0
 ```
 
 **铁律：引擎仓库的「领先」必须永远是 0。** 需要改引擎行为时先问业务层能不能做；必须改的，把 diff 存成 `patches/` 下的补丁文件，每次升级重放，数量控制在个位数。
