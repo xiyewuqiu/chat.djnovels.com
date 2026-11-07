@@ -163,12 +163,19 @@ class Ws:
 
 
 def main():
-    print("① 注册:", api("/jim/register", {"account": ACCOUNT, "password": PASSWORD}).get("msg", ""))
-    body = api("/jim/login", {"account": ACCOUNT, "password": PASSWORD}).get("data") or {}
+    reg = api("/jim/register", {"account": ACCOUNT, "password": PASSWORD})
+    print("① 注册:", reg)
+
+    login = api("/jim/login", {"account": ACCOUNT, "password": PASSWORD})
+    body = login.get("data") or {}
     token, user_id = body.get("im_token"), body.get("user_id")
     print("② 登录: user_id=%s im_token=%s…" % (user_id, (token or "")[:16]))
     if not token:
-        print("❌ 登录失败，未拿到 im_token:", body)
+        # 最常见的原因：账号早已存在、但本机口令文件是新生成的，两者对不上。
+        print("❌ 登录失败，未拿到 im_token")
+        print("   原始响应:", login)
+        print("   账号 %s 的口令来自 %s；若该账号此前已用别的口令注册过，" % (ACCOUNT, PASS_FILE))
+        print("   请删除该文件并用原口令重跑：IM_E2E_PASSWORD=<原口令> python3 ops/tools/im_e2e.py")
         return 1
 
     ws = Ws(HOST, PATH)
