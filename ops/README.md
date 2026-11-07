@@ -533,3 +533,34 @@ npm run build && ls dist/client/assets/js | grep -c tencent   # 期望输出 0
 
 分包里不应再出现任何 `tencent` 产物；`feature-chat` 体积应在 600 KB 左右
 （迁移前连同腾讯 SDK 约 2.5 MB）。
+
+### 4. 长连接连不上时的排查顺序
+
+前端初始化 SDK 时只传了 `appkey` 与 `serverList`（引擎长连接地址）。按现象分三种：
+
+**a) 页面提示「缺少引擎长连接地址」**
+
+`/api/chat/im-token` 没下发 `ws_server`，且构建期也没配 `VITE_IM_SERVER`。
+在 auth 的 `self_hosted_im.ws_server` 填上引擎域名（如 `im.djnovels.com`）即可，
+前端会自动补成 `https://`，SDK 再映射到 `wss://`。
+
+**b) 有地址但一直握手失败**
+
+确认 Nginx 把 443 代理到了引擎的 WS 端口（`connectManager.wsPort`，默认 65103），
+并且证书对该域名有效。用浏览器控制台看
+
+```js
+new WebSocket('wss://im.djnovels.com/im')
+```
+
+能否建立连接——这一步不依赖任何业务代码。
+
+**c) 日志里出现 `nav.fake.com`**
+
+SDK 的 `navList` 参数缺省时会被填成 `["https://nav.fake.com"]`（见
+`node_modules/jugglechat-websdk/index.js`）。如果连接流程真的去请求它就会超时。
+
+当前适配层**没有传 navList**，只传 `serverList`，按设计足以直连。若实测发现连接
+卡在这一步，需要把引擎的 nav 网关（`navGateway.httpPort`，默认 65102）也暴露出来
+并在 `provider.ts` 的 `init` 里一并传入。这一条尚未在真实环境验证过。
+
