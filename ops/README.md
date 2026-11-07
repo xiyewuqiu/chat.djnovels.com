@@ -470,7 +470,7 @@ mux.Handle("/jim/", ginEngine)
 ## 13. 已知限制
 
 1. **7 天的“删除”目前只到数据库**：历史读接口不按保留期过滤，清理挂在消息保存路径上并有 60 秒节流。修法见 `architecture-decision.md` 第 6.2 节。
-2. **附件不受 7 天约束**：引擎不回收文件，必须在对象存储侧配生命周期。
+2. **附件不受 7 天约束**：引擎不回收文件，必须在对象存储侧配生命周期（对象存储的接入见第 15 节）。
 3. **备份会延长实际保留期**：备份留 90 天，“7 天后删除”在备份里不成立。
 4. **单机上限**：开源版不支持多节点集群，扩容只能垂直向上。
 5. **管理台 65109 鉴权较弱**：只有口令 + JWT（密钥见 `adminSecret`），没有 MFA、没有 IP 限制；
@@ -495,6 +495,82 @@ Nginx 收敛只是第二道锁，第一道必须是防火墙：65103 要在 ufw 
 
 ---
 
+## 15. 媒体上传通道（对象存储）
+
+图片/语音/视频/文件的发送链路是「预签名直传」，**不经过业务层的数据面**：
+
+```
+POST /jim/file_cred  → { oss_type, domain, pre_sign_resp: { url, obj_key } }
+        ↓ 浏览器 PUT 预签名 URL（15 分钟有效）
+对象存储
+        ↓ domain + obj_key
+https://<公开读域名>/images/<uuid>.jpg  → 写进消息体
+```
+
+### 配置在哪
+
+**不在 `conf/config.yml` 里，在数据库的 `fileconfs` 表**（按租户一行）：
+
+| 列 | 含义 |
+|---|---|
+| `app_key` | 租户 id；与 `(channel)` 一起唯一 |
+| `channel` | `aws`（S3 兼容）/ `minio` / `qiniu` / `oss` |
+| `conf` | 通道凭据 JSON |
+| `enable` | `1` 才生效 |
+
+服务端按 `appkey` 读配置（`services/fileservice.go` 的 `GetFileConf`，缓存 5/10 分钟过期，
+改完配置最多 10 分钟生效，`pm2 restart chat.djnovels.com` 可立即生效）。
+
+### Cloudflare R2（当前生产通道）
+
+R2 是 S3 兼容协议，走 `channel=aws`。先在 Cloudflare 建好 bucket 与 API 令牌，
+再给 bucket 绑一个**公开读**的自定义域（或打开 r2.dev 子域）：
+
+```sql
+-- conf 的四个字段名与 commons/fileengines/s3.go 的 S3Config 一一对应
+INSERT INTO fileconfs (app_key, channel, conf, enable) VALUES (
+  'dz.djnovels.com', 'aws',
+  '{"access_key":"<R2_ACCESS_KEY>","secret_key":"<R2_SECRET>",
+    "endpoint":"https://<ACCOUNT_ID>.r2.cloudflarestorage.com",
+    "region":"auto","bucket":"chat",
+    "domain":"https://cdn.djnovels.com"}',
+  1
+) ON DUPLICATE KEY UPDATE conf=VALUES(conf), enable=1;
+```
+
+- `endpoint` 只写到账号级，**不要**把 `/bucket` 拼进去，bucket 是独立字段
+- `region` 对 R2 固定写 `auto`
+- `domain` 是消息里最终地址的前缀，必须指向同一个 bucket 的根。
+  留空时前端会拒绝发送（消息发出去对方也打不开），属于配置缺失
+- `public_read` 留空：R2 没有对象 ACL，预签名只签 `host`，客户端因此可以自由设置
+  `Content-Type`。`public_read: true` 只给真正的 AWS S3 用（会额外签 `x-amz-acl`，
+  客户端必须原样回传该头）
+
+### 验证
+
+```bash
+# 1) 换凭据（回环，公网对 /jim/internal/ 一律 404）
+curl -s -X POST http://127.0.0.1:65110/jim/internal/token \
+  -H "X-Service-Key: $(cat /root/.im-service-key)" \
+  -H "appkey: dz.djnovels.com" -H 'Content-Type: application/json' \
+  -d '{"account":"probe"}'
+
+# 2) 拿预签名并直传（把上一步的 im_token 填进去）
+curl -s -X POST https://chat.djnovels.com/jim/file_cred \
+  -H "appkey: dz.djnovels.com" -H "Authorization: <im_token>" \
+  -H 'Content-Type: application/json' -d '{"file_type":1,"ext":"jpg"}'
+# → 期望 oss_type=2、domain 非空、pre_sign_resp.url/obj_key 都在
+
+curl -s -o /dev/null -w '%{http_code}\n' -X PUT '<pre_sign_resp.url>' \
+  -H 'Content-Type: image/jpeg' --data-binary @some.jpg
+# → 期望 200
+```
+
+前端不在服务器上改配置：bucket、域名、供应商全部由这张表决定，
+换存储或换域名都不需要重新发版。
+
+---
+
 ## 自营 IM 切换的服务器验证
 
 前端已不再依赖腾讯 IM SDK，聊天凭据统一由 `auth.djnovels.com` 的
@@ -515,10 +591,13 @@ Nginx 收敛只是第二道锁，第一道必须是防火墙：65103 要在 ufw 
 在业务层仓库根目录执行：
 
 ```bash
+# 换凭据走回环（公网对 /jim/internal/ 一律 404，这是设计），长连接走公网域名
 IM_E2E_SERVICE_KEY=<serviceKey> python3 ops/tools/im_e2e.py
 ```
 
 脚本做四件事：服务密钥换凭据 → WebSocket 握手 → 发 ConnectMsg → 校验 ConnectAck。
+换凭据的地址默认 `http://127.0.0.1:65110`，可用 `IM_E2E_INTERNAL_API` 覆盖（跨机部署时指向内网地址）；
+租户用 `IM_E2E_APPKEY`（默认 `smoketest`）。
 
 - 输出 `✅ 端到端通过` 且退出码 0，说明**注册即入租户、凭据可连引擎**这条路是通的。
 - `❌ 换凭据失败`：密钥与业务层不一致，或服务端未重启。

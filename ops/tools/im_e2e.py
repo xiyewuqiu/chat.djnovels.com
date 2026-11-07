@@ -15,6 +15,11 @@
 IM_E2E_PASSWORD，其次取本机 ~/.im-e2e.pass（不存在则随机生成并落盘 0600），
 避免把可登录生产的口令写死在仓库里。
 
+环境变量：IM_E2E_APPKEY（租户）、IM_E2E_SERVICE_KEY（服务密钥，走则免注册免登录）、
+IM_E2E_INTERNAL_API（业务层回环地址，默认 http://127.0.0.1:65110 —— 公网入口
+对 /jim/internal/ 返回 404 是预期行为）、IM_E2E_ACCOUNT（默认 smoketest0001）、
+IM_E2E_PASSWORD（缺省读 ~/.im-e2e.pass）。
+
 退出码 0 表示 ConnectAck 的 code 为 0。
 
 注意：引擎会把「app_key 不存在」也写进 appinfo 缓存（commonservices/appinfocache.go:227），
@@ -23,7 +28,10 @@ IM_E2E_PASSWORD，其次取本机 ~/.im-e2e.pass（不存在则随机生成并�
 """
 import base64, json, os, socket, ssl, struct, sys, urllib.error, urllib.request
 
-API = "https://chat.djnovels.com"   # 业务层：注册、登录、换 im_token
+API = "https://chat.djnovels.com"   # 业务层公网入口：注册、登录
+# /jim/internal/* 在公网被 Nginx 显式拒绝（这是刻意设计，不是故障），
+# 服务密钥只能在回环/内网调用，因此换凭据走独立地址。
+INTERNAL_API = os.environ.get("IM_E2E_INTERNAL_API", "http://127.0.0.1:65110")
 HOST, PATH = "im.djnovels.com", "/im"   # 引擎长连接（固定 /im，SDK 也是这么拼的）
 APPKEY = os.environ.get("IM_E2E_APPKEY", "smoketest")
 SERVICE_KEY = os.environ.get("IM_E2E_SERVICE_KEY", "")
@@ -105,12 +113,12 @@ def pbpull(buf):
 
 
 # ---------------- 业务层：注册 + 登录 ----------------
-def api(path, body, extra_headers=None):
+def api(path, body, extra_headers=None, base=None):
     headers = {"Content-Type": "application/json", "appkey": APPKEY, "User-Agent": "curl/8.5.0"}
     if extra_headers:
         headers.update(extra_headers)
     req = urllib.request.Request(
-        API + path, data=json.dumps(body).encode(),
+        (base or API) + path, data=json.dumps(body).encode(),
         headers=headers)
     try:
         return json.loads(urllib.request.urlopen(req, timeout=20).read())
@@ -172,13 +180,15 @@ def main():
     if SERVICE_KEY:
         resp = api("/jim/internal/token",
                    {"account": ACCOUNT, "nickname": "e2e"},
-                   {"X-Service-Key": SERVICE_KEY})
+                   {"X-Service-Key": SERVICE_KEY},
+                   base=INTERNAL_API)
         body = resp.get("data") or {}
         token, user_id = body.get("im_token"), body.get("im_user_id")
         print("① 内部换凭据: code=%s user_id=%s" % (resp.get("code"), user_id))
         if not token:
             print("❌ 换凭据失败:", resp)
-            print("   检查 IM_E2E_SERVICE_KEY 是否与业务层 serviceKey 一致")
+            print("   检查 IM_E2E_SERVICE_KEY 是否与业务层 serviceKey 一致，")
+            print("   以及 IM_E2E_INTERNAL_API（默认 %s）是否指向业务层回环端口" % INTERNAL_API)
             return 1
     else:
         reg = api("/jim/register", {"account": ACCOUNT, "password": PASSWORD})

@@ -27,7 +27,10 @@ const (
 )
 
 type QryFileCredResp struct {
-	OssType       OssType        `json:"oss_type"`
+	OssType OssType `json:"oss_type"`
+	// Domain 是预签名通道（S3 / MinIO / OSS）的对象公开读基地址，
+	// 客户端用 Domain + pre_sign_resp.obj_key 拼出最终地址；空串表示只能直传预签名 URL。
+	Domain        string         `json:"domain,omitempty"`
 	QiNiuCredResp *QiNiuCredResp `json:"qiniu_resp"`
 	PreSignResp   *PreSignResp   `json:"pre_sign_resp"`
 }

@@ -54,14 +54,16 @@ func GetFileCred(ctx context.Context, req *apimodels.QryFileCredReq) (errs.IMErr
 			return errs.IMErrorCode_APP_FILE_NOOSS, nil
 		}
 
-		signedURL, err := fileConf.S3.PreSignedURL(req.Ext, dir)
+		signedURL, objKey, err := fileConf.S3.PreSignedURLWithKey(req.Ext, dir)
 		if err != nil {
 			return errs.IMErrorCode_APP_FILE_SIGNERR, nil
 		}
 		return errs.IMErrorCode_SUCCESS, &apimodels.QryFileCredResp{
 			OssType: apimodels.OssType_S3,
+			Domain:  fileConf.S3.Domain(),
 			PreSignResp: &apimodels.PreSignResp{
-				Url: signedURL,
+				Url:    signedURL,
+				ObjKey: objKey,
 			},
 		}
 	case fileengines.ChannelOss:
