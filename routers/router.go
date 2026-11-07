@@ -115,6 +115,14 @@ func Route(eng *gin.Engine, prefix string) *gin.RouterGroup {
 
 	//feedback
 	group.POST("/feedbacks/add", apis.AddFeedback)
+
+	// 内部接口：只给业务后端用（服务端到服务端换 IM 凭据）。
+	// 不挂 apis.Validate（那套要用户 token），改由服务密钥鉴权；
+	// 公网 Nginx 必须拒绝 /jim/internal/ 前缀，只允许私网访问。
+	internalGroup := eng.Group("/" + prefix + "/internal")
+	internalGroup.Use(apis.ServiceAuth)
+	internalGroup.POST("/token", apis.InternalToken)
+	internalGroup.POST("/group-member", apis.InternalAddGroupMember)
 	return group
 }
 
