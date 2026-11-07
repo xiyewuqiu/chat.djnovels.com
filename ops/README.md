@@ -706,6 +706,56 @@ DELETE FROM cmdsendboxmsgs_split  WHERE user_id LIKE '%:%'   OR target_id LIKE '
 
 修复后客户端传的就是裸对端 id，引擎日志里 `receiver:` 与 `target_id:` 都不再出现冒号。
 
+#### 5.1 第二种幽灵：把占位身份 `admin` 当对端 id（同一天发现的第二个坑）
+
+修复 5. 之后，私聊仍然收不到 —— 因为还有第二条路径把会话打到不存在的用户上。
+
+引擎里的 user id 是建号时生成的**随机串**：业务侧账号 `admin`（客服号）在引擎里的 user id 是
+`FB1ALHa2Ze2`。前端「联系客服」在服务端下发真实 id 之前，只能拿占位身份 `admin` 表达"客服"语义；
+一旦在占位状态下把消息发出去，`receiver` 就是 `admin` —— 引擎里没有这个用户，消息照样落进
+谁也查不到的会话。**这个坑刷新页面治不好**：脏身份已经写进浏览器 localStorage，每次进来都照旧。
+
+判定（和 5. 一样看引擎日志）：
+
+```bash
+tail -200 /www/wwwroot/chat.djnovels.com/im.djnovels.com/launcher/build/logs/jim-info.log \
+  | grep -E "method:p_msg|msg_dispatch"
+```
+
+- 正常：`receiver:FB1ALHa2Ze2`（随机串，引擎里真实存在）
+- 异常：`receiver:admin` —— 裸账号名当对端 id，幽灵会话
+
+清理（把 `admin` 换成实际占位值；引擎 user id 一定是随机串，出现裸账号名必然是脏数据）：
+
+```sql
+-- 先看有多少
+SELECT 'conversations' t, COUNT(*) c FROM conversations         WHERE user_id='admin' OR target_id='admin'
+UNION ALL SELECT 'p_hismsgs',            COUNT(*) FROM p_hismsgs            WHERE sender_id='admin' OR receiver_id='admin'
+UNION ALL SELECT 'p_delhismsgs',         COUNT(*) FROM p_delhismsgs         WHERE user_id='admin'   OR target_id='admin'
+UNION ALL SELECT 'inboxmsgs_split',      COUNT(*) FROM inboxmsgs_split      WHERE user_id='admin'   OR target_id='admin'
+UNION ALL SELECT 'sendboxmsgs_split',    COUNT(*) FROM sendboxmsgs_split    WHERE user_id='admin'   OR target_id='admin'
+UNION ALL SELECT 'cmdinboxmsgs_split',   COUNT(*) FROM cmdinboxmsgs_split   WHERE user_id='admin'   OR target_id='admin'
+UNION ALL SELECT 'cmdsendboxmsgs_split', COUNT(*) FROM cmdsendboxmsgs_split WHERE user_id='admin'   OR target_id='admin';
+
+-- 确认无误后删除
+DELETE FROM conversations         WHERE user_id='admin' OR target_id='admin';
+DELETE FROM p_hismsgs             WHERE sender_id='admin' OR receiver_id='admin';
+DELETE FROM p_delhismsgs          WHERE user_id='admin'   OR target_id='admin';
+DELETE FROM inboxmsgs_split       WHERE user_id='admin'   OR target_id='admin';
+DELETE FROM sendboxmsgs_split     WHERE user_id='admin'   OR target_id='admin';
+DELETE FROM cmdinboxmsgs_split    WHERE user_id='admin'   OR target_id='admin';
+DELETE FROM cmdsendboxmsgs_split  WHERE user_id='admin'   OR target_id='admin';
+```
+
+注意 `p_hismsgs` 里脏行的 `conver_id` 长这样：`Ncek-c8rUci:admin`。`conver_id` 是引擎内部拼的
+（单聊天生带冒号），**只删上面这些身份列命中的行，不要按 conver_id 去删**。
+
+客户端侧的修复：客服身份只认服务端下发的真实 id（`/api/chat/im-token` → `data.service_user_id`），
+占位身份不落盘、不发消息；未就绪时输入区锁死并提示「在线客服通道未就绪」。用户侧如果还留着老
+localStorage，重新登录一次即可（新代码读到占位值会丢弃）。
+
+修复后：引擎日志里 `receiver:` 是 `FB1ALHa2Ze2` 这类随机串，客服端「消息」列表能看到用户会话。
+
 ### 6. 新用户是怎么进默认书友群的
 
 三条路径，都幂等（底层是 `/jim/internal/group-member`，已在群里按成功处理）：
