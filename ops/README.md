@@ -547,9 +547,58 @@ INSERT INTO fileconfs (app_key, channel, conf, enable) VALUES (
   `Content-Type`。`public_read: true` 只给真正的 AWS S3 用（会额外签 `x-amz-acl`，
   客户端必须原样回传该头）
 
+### 桶上的 CORS 策略（浏览器直传的前置条件，2026-11-07 补）
+
+预签名直传是**浏览器直接打 R2**，跨域 PUT 会先发 OPTIONS 预检。R2 在桶没有 CORS 策略时对预检
+一律回 `403 Forbidden`，表现就是"图片/文件传不上去"（控制台里一条 `OPTIONS ... 403`，PUT 压根没发出去）。
+这一步业务层与引擎都插不上手 —— 策略只能落在桶上。
+
+策略（来源只放行生产前端；PUT 是上传，GET/HEAD 给前端 `fetch` 拉附件用）：
+
+```xml
+<CORSConfiguration>
+  <CORSRule>
+    <AllowedOrigin>https://dz.djnovels.com</AllowedOrigin>
+    <AllowedMethod>GET</AllowedMethod>
+    <AllowedMethod>HEAD</AllowedMethod>
+    <AllowedMethod>PUT</AllowedMethod>
+    <AllowedHeader>*</AllowedHeader>
+    <ExposeHeader>ETag</ExposeHeader>
+    <MaxAgeSeconds>86400</MaxAgeSeconds>
+  </CORSRule>
+</CORSConfiguration>
+```
+
+写入与查看用 `ops/tools/r2_cors.py`（只用标准库自己签 SigV4 —— 服务器上没有 aws cli / boto3）：
+
+```bash
+CREDS=$(MYSQL_PWD=... mysql -h127.0.0.1 -uroot -D im_db -N \
+  -e "SELECT conf FROM fileconfs WHERE app_key='dz.djnovels.com';")
+export R2_ENDPOINT=$(echo "$CREDS"   | python3 -c 'import sys,json;print(json.load(sys.stdin)["endpoint"])')
+export R2_BUCKET=$(echo "$CREDS"     | python3 -c 'import sys,json;print(json.load(sys.stdin)["bucket"])')
+export R2_ACCESS_KEY=$(echo "$CREDS" | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_key"])')
+export R2_SECRET_KEY=$(echo "$CREDS" | python3 -c 'import sys,json;print(json.load(sys.stdin)["secret_key"])')
+
+python3 ops/tools/r2_cors.py show                                  # 现状（没有策略时是 NoSuchCORSConfiguration）
+python3 ops/tools/r2_cors.py apply --origin https://dz.djnovels.com
+python3 ops/tools/r2_cors.py rm --key images/<uuid>.png            # 清掉验证用的测试对象
+```
+
+桶级策略同时作用于 **S3 端点与公开读自定义域**：`chatr2.djnovels.com` 的 OPTIONS 也回 204，
+所以前端用 `fetch` 拉附件（不只是 `<img>` 展示）同样不受影响。
+
+新增前端来源（换域名、加预览域）时**重复 `--origin` 即可**，不要用 `*`：
+`AllowedOrigin: *` 会让任何站点都能拿用户的预签名 URL 去 PUT。
+
 ### 验证
 
 ```bash
+# 0) 预检 —— 浏览器直传的第一步；桶上没有 CORS 策略时这里就是 403
+curl -s -i -X OPTIONS '<pre_sign_resp.url>' \
+  -H 'Origin: https://dz.djnovels.com' -H 'Access-Control-Request-Method: PUT' \
+  -H 'Access-Control-Request-Headers: content-type' | head -8
+# → 期望 204 No Content + Access-Control-Allow-Origin: https://dz.djnovels.com
+
 # 1) 换凭据（回环，公网对 /jim/internal/ 一律 404）
 curl -s -X POST http://127.0.0.1:65110/jim/internal/token \
   -H "X-Service-Key: $(cat /root/.im-service-key)" \
