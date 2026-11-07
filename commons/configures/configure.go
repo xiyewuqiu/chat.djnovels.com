@@ -38,6 +38,10 @@ type AppConfig struct {
 	BotConnector struct {
 		Domain string `yaml:"domain"`
 	} `yaml:"botConnector"`
+
+	// ServiceKey 服务端到服务端调用的共享密钥（/jim/internal/*）。
+	// 只走私网 + 该密钥鉴权；留空表示未开通内部接口，相关路由直接拒绝。
+	ServiceKey string `yaml:"serviceKey"`
 }
 
 var Config AppConfig

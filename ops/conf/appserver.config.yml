@@ -33,3 +33,8 @@ botConnector:
   domain: ""
 
 commercial: false
+
+# 服务端到服务端调用的共享密钥（/jim/internal/token）。
+# 业务后端用它换 IM 凭据；留空等于关闭内部接口（默认拒绝）。
+# 生成：openssl rand -base64 32。公网 Nginx 必须拒绝 /jim/internal/ 前缀。
+serviceKey: __SERVICE_KEY__
