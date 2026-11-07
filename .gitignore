@@ -19,3 +19,10 @@ logs/*
 conf/config.yml
 .opencode/*
 opencode.jsonc
+
+# ===== 部署产物（名称与 ecosystem.config.js 的进程名/script 一致） =====
+chat.djnovels.com
+chat.djnovels.com.new
+
+# 宝塔面板在站点根生成的空配置（本机用 Nginx，它不生效）
+.htaccess

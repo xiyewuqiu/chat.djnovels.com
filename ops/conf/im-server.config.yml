@@ -1,10 +1,13 @@
-# IM 引擎的运行时配置。部署时放在 /opt/djnovels-im/im-server/conf/config.yml
-# 由 systemd 通过 -config 参数指定，见 deploy/systemd/djnovels-im-server.service。
+# IM 引擎（JuggleIM）的运行时配置模板。
+# 部署时复制到 <引擎项目>/launcher/build/conf/config.yml（该目录被上游 .gitignore 忽略）。
 #
-# 改完执行：systemctl restart djnovels-im-server
+# PM2 应用名：im.djnovels.com（见引擎项目 launcher/build/ecosystem.config.js）
+# 改完执行：pm2 restart im.djnovels.com
+#
+# 端口全部使用高位端口，且只在回环内使用：公网入口永远是 Nginx 的 443。
 
-# 客户端长连接端口（WebSocket）
-defaultPort: 9003
+# 客户端长连接端口（WebSocket），Nginx 代理 im.djnovels.com -> 127.0.0.1:65103
+defaultPort: 65103
 
 nodeName: jim-node-1
 nodeHost: 127.0.0.1
@@ -33,21 +36,28 @@ mongodb:
   address: 127.0.0.1:27017
   name: jim_msgs
 
-# 服务端 REST API：只监听回环，供业务层和运维工具调用
+# 服务端 REST API：只给业务层和运维工具用，不对外。
+# ipWhitelist 在应用层再拦一道：即使防火墙被误开，非回环来源也拿不到 API。
 apiGateway:
-  httpPort: 9001
+  httpPort: 65101
+  ipWhitelist:
+    - 127.0.0.1
 
 # 客户端连接管理器
 connectManager:
-  wsPort: 9003
+  wsPort: 65103
 
 # Navigator：向客户端下发长连接地址
 navGateway:
-  httpPort: 9002
+  httpPort: 65102
 
-# 管理台：只监听回环，永远不要暴露到公网
+# 管理台：永远不要暴露到公网
 adminGateway:
-  httpPort: 8090
+  httpPort: 65109
+
+# 管理台 JWT 签名密钥。留空时引擎会用硬编码的默认值 jug9le1m，
+# 等于任何人都能离线伪造管理台 token，必须设置。
+adminSecret: CHANGE_ME
 
 # 引擎内部调用自身 API 使用
-imApiDomain: http://127.0.0.1:9001
+imApiDomain: http://127.0.0.1:65101
