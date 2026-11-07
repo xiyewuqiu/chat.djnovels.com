@@ -533,15 +533,16 @@ INSERT INTO fileconfs (app_key, channel, conf, enable) VALUES (
   '{"access_key":"<R2_ACCESS_KEY>","secret_key":"<R2_SECRET>",
     "endpoint":"https://<ACCOUNT_ID>.r2.cloudflarestorage.com",
     "region":"auto","bucket":"chat",
-    "domain":"https://cdn.djnovels.com"}',
+    "domain":"https://chatr2.djnovels.com"}',
   1
 ) ON DUPLICATE KEY UPDATE conf=VALUES(conf), enable=1;
 ```
 
 - `endpoint` 只写到账号级，**不要**把 `/bucket` 拼进去，bucket 是独立字段
 - `region` 对 R2 固定写 `auto`
-- `domain` 是消息里最终地址的前缀，必须指向同一个 bucket 的根。
-  留空时前端会拒绝发送（消息发出去对方也打不开），属于配置缺失
+- `domain` 是消息里最终地址的前缀，必须指向同一个 bucket 的根（本机是
+  `https://chatr2.djnovels.com`，R2 自定义域）。留空时前端会拒绝发送
+  （消息发出去对方也打不开），属于配置缺失
 - `public_read` 留空：R2 没有对象 ACL，预签名只签 `host`，客户端因此可以自由设置
   `Content-Type`。`public_read: true` 只给真正的 AWS S3 用（会额外签 `x-amz-acl`，
   客户端必须原样回传该头）
@@ -567,7 +568,23 @@ curl -s -o /dev/null -w '%{http_code}\n' -X PUT '<pre_sign_resp.url>' \
 ```
 
 前端不在服务器上改配置：bucket、域名、供应商全部由这张表决定，
-换存储或换域名都不需要重新发版。
+换存储或换域名都不需要重新发版（历史消息里的旧地址仍然有效，
+只要旧入口不被关掉）。
+
+### 公开读的边界
+
+自定义域只提供 `GetObject`（按 key 直取），**不提供目录列举**；
+key 是 `images/<22 位随机串>.jpg`（`tools.GenerateUUIDShort22`），不可枚举。
+所以风险模型是「拿到链接的人能看」，与微信/QQ 的图片 CDN 一致，
+不是「谁都能翻」。两条必须记住的加固项：
+
+- **对象不会自己过期**：引擎从不删文件，要在 R2 侧给 bucket 配 Lifecycle，
+  否则附件永久留存，与消息的 7 天保留期不一致（见第 13 节第 2 条）
+- **删除有传播窗口**：自定义域是 Cloudflare 边缘缓存，对象删掉后一段时间内
+  仍可能返回缓存副本，撤回/删除的语义要按这个预期设计
+
+如果以后要求「未登录不能看」，做法是在自定义域前面挂一个 Worker，
+校验 HMAC 签名后再回源（前端渲染时按需换签名），那是另一档工程。
 
 ---
 
