@@ -26,6 +26,7 @@ import base64, json, os, socket, ssl, struct, sys, urllib.error, urllib.request
 API = "https://chat.djnovels.com"   # 业务层：注册、登录、换 im_token
 HOST, PATH = "im.djnovels.com", "/im"   # 引擎长连接（固定 /im，SDK 也是这么拼的）
 APPKEY = os.environ.get("IM_E2E_APPKEY", "smoketest")
+SERVICE_KEY = os.environ.get("IM_E2E_SERVICE_KEY", "")
 ACCOUNT = os.environ.get("IM_E2E_ACCOUNT", "smoketest0001")
 PASS_FILE = os.path.expanduser("~/.im-e2e.pass")
 
@@ -104,10 +105,13 @@ def pbpull(buf):
 
 
 # ---------------- 业务层：注册 + 登录 ----------------
-def api(path, body):
+def api(path, body, extra_headers=None):
+    headers = {"Content-Type": "application/json", "appkey": APPKEY, "User-Agent": "curl/8.5.0"}
+    if extra_headers:
+        headers.update(extra_headers)
     req = urllib.request.Request(
         API + path, data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json", "appkey": APPKEY, "User-Agent": "curl/8.5.0"})
+        headers=headers)
     try:
         return json.loads(urllib.request.urlopen(req, timeout=20).read())
     except urllib.error.HTTPError as err:
@@ -163,20 +167,33 @@ class Ws:
 
 
 def main():
-    reg = api("/jim/register", {"account": ACCOUNT, "password": PASSWORD})
-    print("① 注册:", reg)
-
-    login = api("/jim/login", {"account": ACCOUNT, "password": PASSWORD})
-    body = login.get("data") or {}
-    token, user_id = body.get("im_token"), body.get("user_id")
-    print("② 登录: user_id=%s im_token=%s…" % (user_id, (token or "")[:16]))
-    if not token:
-        # 最常见的原因：账号早已存在、但本机口令文件是新生成的，两者对不上。
-        print("❌ 登录失败，未拿到 im_token")
-        print("   原始响应:", login)
-        print("   账号 %s 的口令来自 %s；若该账号此前已用别的口令注册过，" % (ACCOUNT, PASS_FILE))
-        print("   请删除该文件并用原口令重跑：IM_E2E_PASSWORD=<原口令> python3 ops/tools/im_e2e.py")
-        return 1
+    # 首选：服务端到服务端换凭据——这正是前端 /api/chat/im-token 背后的路径，
+    # 幂等建号，不需要手机/邮箱验证码。
+    if SERVICE_KEY:
+        resp = api("/jim/internal/token",
+                   {"account": ACCOUNT, "nickname": "e2e"},
+                   {"X-Service-Key": SERVICE_KEY})
+        body = resp.get("data") or {}
+        token, user_id = body.get("im_token"), body.get("im_user_id")
+        print("① 内部换凭据: code=%s user_id=%s" % (resp.get("code"), user_id))
+        if not token:
+            print("❌ 换凭据失败:", resp)
+            print("   检查 IM_E2E_SERVICE_KEY 是否与业务层 serviceKey 一致")
+            return 1
+    else:
+        reg = api("/jim/register", {"account": ACCOUNT, "password": PASSWORD})
+        print("① 注册:", reg)
+        login = api("/jim/login", {"account": ACCOUNT, "password": PASSWORD})
+        body = login.get("data") or {}
+        token, user_id = body.get("im_token"), body.get("user_id")
+        print("② 登录: user_id=%s im_token=%s…" % (user_id, (token or "")[:16]))
+        if not token:
+            # 最常见的原因：账号早已存在、但本机口令文件是新生成的，两者对不上。
+            print("❌ 登录失败，未拿到 im_token")
+            print("   原始响应:", login)
+            print("   账号 %s 的口令来自 %s；若该账号此前已用别的口令注册过，" % (ACCOUNT, PASS_FILE))
+            print("   请改用服务密钥模式：IM_E2E_SERVICE_KEY=xxx python3 ops/tools/im_e2e.py")
+            return 1
 
     ws = Ws(HOST, PATH)
     print("③ 握手:", ws.status)
