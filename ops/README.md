@@ -60,20 +60,26 @@
 ├── README.md                    站点根说明
 ├── cert/{fullchain,privkey}.pem *.djnovels.com 的 Cloudflare 源站证书
 ├── chat.djnovels.com/           业务层（独立 Git 仓库）
-│   ├── build.sh                 编译 → UPX → 原子替换 → pm2 restart
-│   ├── ecosystem.config.js      PM2 进程定义
+│   ├── build.sh                 编译 → UPX → 原子替换 → pm2 startOrReload
+│   ├── ecosystem.config.js      业务层 PM2 定义
 │   ├── chat.djnovels.com        编译产物（.gitignore）
 │   ├── conf/config.yml          运行时配置（.gitignore，模板在 ops/conf/）
 │   ├── logs/{out.log,error.log} PM2 日志（.gitignore）
 │   └── ops/                     本目录：SQL / Nginx / 配置模板 / 本文档
+│       ├── build-engine.sh      引擎编译部署脚本
+│       └── conf/
+│           ├── ecosystem.im-server.config.js  引擎 PM2 定义（唯一版本化来源）
+│           ├── im-server.config.yml           引擎配置模板
+│           └── appserver.config.yml           业务层配置模板
 └── im.djnovels.com/            引擎（juggleim/im-server 上游仓库，零改动）
     └── launcher/build/          整份运行期资产都放这里，上游 .gitignore 的 `**/build` 已整体忽略
-        ├── build.sh
-        ├── ecosystem.config.js
         ├── im.djnovels.com      编译产物
-        ├── conf/config.yml      运行时配置
+        ├── conf/config.yml      运行时配置（由 ops/conf/im-server.config.yml 生成）
         └── logs/{out.log,error.log,jim-info.log}
 ```
+
+**引擎的运维资产不在引擎仓库里，全在 `ops/`。** 上游用 `**/build` 忽略了 `launcher/build`，
+把脚本放那儿等于没有版本管理——服务器重建那天就找不回来了。
 
 `ops/` 里的命令都假设**当前目录是业务层仓库根目录** `/www/wwwroot/chat.djnovels.com/chat.djnovels.com`。
 
@@ -84,11 +90,16 @@
 编译在服务器上做（和站点其它 Go 服务一致），两个项目各自一条命令：
 
 ```bash
-cd /www/wwwroot/chat.djnovels.com/chat.djnovels.com && ./build.sh   # 业务层
-cd /www/wwwroot/chat.djnovels.com/im.djnovels.com/launcher/build && ./build.sh   # 引擎
+cd /www/wwwroot/chat.djnovels.com/chat.djnovels.com
+./build.sh              # 业务层
+./ops/build-engine.sh   # 引擎（脚本从 ops/conf/ecosystem.im-server.config.js 读运行目录）
 ```
 
-两个脚本做同一套事：`CGO_ENABLED=0` 静态编译 → UPX 压缩（装了才压，压失败自动退回未压缩）→ 原子替换二进制 → 清日志 → `pm2 restart`。
+两个脚本做同一套事：`CGO_ENABLED=0` 静态编译 → UPX 压缩（装了才压，压失败自动退回未压缩）→ 原子替换二进制 → 清日志 → `pm2 startOrReload`。
+
+**PM2 的配置文件名必须以 `.config.js` 结尾。** `Common.isConfigFile()` 只认
+`.json` / `.yml` / `.yaml` / `.config.js`（而且是子串匹配），别的名字会被 PM2 当成普通 JS
+脚本直接用 node 跑起来——你会看到一个多出来的进程，而真正的服务根本没重启。
 
 只想验证代码能不能编过（不落盘到部署目录、不重启进程）：
 
@@ -133,8 +144,8 @@ chmod 600 conf/config.yml ../im.djnovels.com/launcher/build/conf/config.yml
 # 4) 数据库（见第 5 节）
 # 5) 编译（见第 3 节）
 # 6) 起进程 + 固化开机自启
-pm2 start ../im.djnovels.com/launcher/build/ecosystem.config.js
-pm2 start ecosystem.config.js
+pm2 start ops/conf/ecosystem.im-server.config.js   # 引擎
+pm2 start ecosystem.config.js                      # 业务层
 pm2 save
 
 # 7) 宝塔面板建站：域名 + 证书 + 反向代理（见第 7 节）
@@ -142,7 +153,8 @@ pm2 save
 #    建站后不要在面板里点「启动」——进程由 PM2 管。
 ```
 
-引擎目录下的 `build.sh` / `ecosystem.config.js` 放在 `launcher/build/` 里，属于上游 `.gitignore` 的忽略范围，**不需要**手工补 `.gitignore`。
+引擎的编译脚本与 PM2 定义都在本仓库 `ops/` 下（`build-engine.sh`、`conf/ecosystem.im-server.config.js`），
+引擎目录里只留二进制、`conf/`、`logs/` 这些运行期产物——那里被上游 `.gitignore` 忽略，放进去就等于没有版本管理。
 
 ---
 
@@ -184,8 +196,8 @@ mysql -uroot -p im_db < ops/sql/03-business-compat.sql
 ## 6. PM2 与开机自启
 
 ```bash
-pm2 start /www/wwwroot/chat.djnovels.com/im.djnovels.com/launcher/build/ecosystem.config.js
-pm2 start /www/wwwroot/chat.djnovels.com/chat.djnovels.com/ecosystem.config.js
+pm2 start /www/wwwroot/chat.djnovels.com/chat.djnovels.com/ops/conf/ecosystem.im-server.config.js   # 引擎
+pm2 start /www/wwwroot/chat.djnovels.com/chat.djnovels.com/ecosystem.config.js                      # 业务层
 pm2 save                     # 把当前进程列表写进 /root/.pm2/dump.pm2
 pm2 startup                  # 只在没装过时执行一次；本机已装（pm2-root.service 已 enable）
 ```
@@ -315,7 +327,7 @@ curl -s -X POST http://127.0.0.1:65109/admingateway/apps/create \
 
 顺序不能反：引擎会把「app_key 不存在」也写进 appinfo 缓存
 （`services/commonservices/appinfocache.go:227`）。这个缓存的存活策略是读后 5 分钟、创建后 10 分钟
-（`appinfocache.go:109-110`），所以顺序反了会**最多报错 10 分钟**，不是永久。
+（`appinfocache.go:157-158`），所以顺序反了会**最多报错 10 分钟**，不是永久。
 急着重试就 `pm2 restart im.djnovels.com` 立即清掉。
 
 ---

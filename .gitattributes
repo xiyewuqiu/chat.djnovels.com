@@ -1,9 +1,11 @@
 # 仓库内的文本文件统一 LF。
 # 下面这些类型额外强制 LF，因为它们在 Linux 上被直接解析：
-#   .conf/.yml nginx 与程序配置
+#   .conf/.yml nginx 与程序配置；.js 是 PM2 的 ecosystem 定义
 #   .sh       shell 脚本，CRLF 报 bad interpreter
 * text=auto
 *.sh      text eol=lf
+*.js      text eol=lf
+*.json    text eol=lf
 *.conf    text eol=lf
 *.yml     text eol=lf
 *.py      text eol=lf

@@ -1,7 +1,7 @@
 # IM 引擎（JuggleIM）的运行时配置模板。
 # 部署时复制到 <引擎项目>/launcher/build/conf/config.yml（该目录被上游 .gitignore 忽略）。
 #
-# PM2 应用名：im.djnovels.com（见引擎项目 launcher/build/ecosystem.config.js）
+# PM2 应用名：im.djnovels.com（定义见 ops/conf/ecosystem.im-server.config.js）
 # 改完执行：pm2 restart im.djnovels.com
 #
 # 端口全部使用高位端口，且只在回环内使用：公网入口永远是 Nginx 的 443。
