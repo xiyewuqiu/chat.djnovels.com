@@ -659,3 +659,63 @@ SDK 里 `navList` 缺省会被填成 `["https://nav.fake.com"]`，看着像个�
 
 结论：这个默认值是死代码，只要 `serverList` 有值就能直连。适配层不传 `navList` 是正确的，
 不必为了它去暴露 nav 网关。
+
+### 5. 私聊发得出去、对方收不到（2026-11-07 已修复，附排查手法）
+
+现象：群聊一切正常，**单聊（含发给默认客服号）消息"发送成功"但对方永远收不到**。
+根因不在引擎，而在客户端把会话 id 传错了：
+
+引擎内部对单聊会把双方 id 排序拼成 `uid1:uid2` 当 converId，**但这个值不下发给客户端**。
+客户端读写用的 `conversationId` 是**对端身份**（单聊=对方 user id，群聊=群 id），
+引擎再用它自己拼内部的 converId（`services/commonservices/conversationservice.go` 的
+`GetConversationId`）。客户端要是把 `"自己:对方"` 当 targetId 发上去，引擎就照单把它
+当成一个**不存在的用户**，消息落进幽灵会话 —— 只有群聊因为 `conversationId == 群 id` 而幸免。
+
+判定手法（不用翻前端代码，看引擎日志最快）：
+
+```bash
+tail -200 /www/wwwroot/chat.djnovels.com/im.djnovels.com/launcher/build/logs/jim-info.log \
+  | grep -E "method:p_msg|msg_dispatch"
+```
+
+- 正常：`receiver:<裸 user id>`，且随后 `target_id:<裸 user id> online_type:1`（对端在线已投递）
+- 异常：`receiver:` 后面跟着 `xxx:yyy` 这种**带冒号的拼接值** → 就是本条 bug
+
+修复前的脏数据（不可达的幽灵会话/消息）可清理：
+
+```sql
+-- 先看有多少：这些身份列里带冒号的都不是合法 user id / 群 id（幽灵行）
+SELECT 'conversations' t, COUNT(*) c FROM conversations WHERE user_id LIKE '%:%' OR target_id LIKE '%:%'
+UNION ALL SELECT 'p_hismsgs',           COUNT(*) FROM p_hismsgs            WHERE sender_id LIKE '%:%' OR receiver_id LIKE '%:%'
+UNION ALL SELECT 'p_delhismsgs',        COUNT(*) FROM p_delhismsgs         WHERE user_id LIKE '%:%'   OR target_id LIKE '%:%'
+UNION ALL SELECT 'inboxmsgs_split',     COUNT(*) FROM inboxmsgs_split      WHERE user_id LIKE '%:%'   OR target_id LIKE '%:%'
+UNION ALL SELECT 'sendboxmsgs_split',   COUNT(*) FROM sendboxmsgs_split    WHERE user_id LIKE '%:%'   OR target_id LIKE '%:%'
+UNION ALL SELECT 'cmdinboxmsgs_split',  COUNT(*) FROM cmdinboxmsgs_split   WHERE user_id LIKE '%:%'   OR target_id LIKE '%:%'
+UNION ALL SELECT 'cmdsendboxmsgs_split',COUNT(*) FROM cmdsendboxmsgs_split WHERE user_id LIKE '%:%'   OR target_id LIKE '%:%';
+
+-- 确认无误后删除（幽灵会话 + 消息本体 + 离线/漫游镜像的 split 表）
+-- 注意：只有本表这几列算幽灵，`conver_id` 单聊天生就是 "uid1:uid2"，是正常的，别一起删。
+DELETE FROM conversations         WHERE user_id LIKE '%:%' OR target_id LIKE '%:%';
+DELETE FROM p_hismsgs             WHERE sender_id LIKE '%:%' OR receiver_id LIKE '%:%';
+DELETE FROM p_delhismsgs          WHERE user_id LIKE '%:%'   OR target_id LIKE '%:%';
+DELETE FROM inboxmsgs_split       WHERE user_id LIKE '%:%'   OR target_id LIKE '%:%';
+DELETE FROM sendboxmsgs_split     WHERE user_id LIKE '%:%'   OR target_id LIKE '%:%';
+DELETE FROM cmdinboxmsgs_split    WHERE user_id LIKE '%:%'   OR target_id LIKE '%:%';
+DELETE FROM cmdsendboxmsgs_split  WHERE user_id LIKE '%:%'   OR target_id LIKE '%:%';
+```
+
+修复后客户端传的就是裸对端 id，引擎日志里 `receiver:` 与 `target_id:` 都不再出现冒号。
+
+### 6. 新用户是怎么进默认书友群的
+
+三条路径，都幂等（底层是 `/jim/internal/group-member`，已在群里按成功处理）：
+
+| 路径 | 触发时机 | 覆盖面 |
+|---|---|---|
+| 注册即入群 | `auth.djnovels.com` 注册成功后异步拉群（`RegisterHandler.joinDefaultGroup`） | 新用户，不要求打开聊天页 |
+| 打开聊天页 | 前端 `POST /api/chat/join-work-group` | 历史用户、失败重试 |
+| 管理端批量补齐 | `POST /api/admin/chat/sync-group-members` | 存量 VIP/SVIP 一次性补齐 |
+
+注册拉群是 **best-effort**：IM 侧抖动或未配置 `group_id` 只记一行日志
+（`register_im_join_group_failed`），绝不阻塞、更不回滚注册；
+失败的用户仍会在打开聊天页或管理端批量补齐时进群。
