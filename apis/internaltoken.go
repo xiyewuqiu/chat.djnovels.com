@@ -10,7 +10,9 @@ import (
 )
 
 // InternalTokenReq 服务端到服务端的换凭据请求。
-// account 是业务侧的稳定账号标识（例如 "u1001"），不是 IM 的 user_id。
+//
+// account 既是业务侧的稳定账号标识，也是引擎 user_id 本身（见 IssueUserToken 的身份铁律）；
+// nickname / avatar 是业务库里同一时刻的资料快照，用来把引擎侧资料对齐到业务数据。
 type InternalTokenReq struct {
 	Account  string `json:"account"`
 	Nickname string `json:"nickname"`
@@ -19,7 +21,7 @@ type InternalTokenReq struct {
 
 // InternalToken POST /jim/internal/token
 //
-// 为业务账号签发 IM 凭据。幂等：账号存在即复用，不存在则创建。
+// 为业务账号签发 IM 凭据。幂等：账号存在则复用并按业务资料对齐昵称/头像，不存在则建号。
 // 鉴权由 ServiceAuth 中间件完成（服务密钥 + appkey），不校验用户 token。
 func InternalToken(ctx *gin.Context) {
 	req := &InternalTokenReq{}
@@ -28,8 +30,9 @@ func InternalToken(ctx *gin.Context) {
 		return
 	}
 
-	// 账号会落库并被 IM 用作登录账号，长度与字符集必须收口，避免脏数据进入唯一索引
-	if len(req.Account) > 32 {
+	// account 会原样落进 users.user_id / users.login_account，成为引擎身份本身：
+	// 长度与字符集必须在这里收口（业务层已过滤一遍，但本接口是服务端接口，不能只靠上游）
+	if !services.IsValidUserId(req.Account) {
 		responses.ErrorHttpResp(ctx, errs.IMErrorCode_APP_REQ_BODY_ILLEGAL)
 		return
 	}

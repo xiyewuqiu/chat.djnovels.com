@@ -759,8 +759,8 @@ DELETE FROM cmdsendboxmsgs_split  WHERE user_id LIKE '%:%'   OR target_id LIKE '
 
 修复 5. 之后，私聊仍然收不到 —— 因为还有第二条路径把会话打到不存在的用户上。
 
-引擎里的 user id 是建号时生成的**随机串**：业务侧账号 `admin`（客服号）在引擎里的 user id 是
-`FB1ALHa2Ze2`。前端「联系客服」在服务端下发真实 id 之前，只能拿占位身份 `admin` 表达"客服"语义；
+引擎里的 user id 是建号时生成的**随机串**（5.2 之前的形态）：业务侧账号 `admin`（客服号）在引擎里的
+user id 是 `FB1ALHa2Ze2`。前端「联系客服」在服务端下发真实 id 之前，只能拿占位身份 `admin` 表达"客服"语义；
 一旦在占位状态下把消息发出去，`receiver` 就是 `admin` —— 引擎里没有这个用户，消息照样落进
 谁也查不到的会话。**这个坑刷新页面治不好**：脏身份已经写进浏览器 localStorage，每次进来都照旧。
 
@@ -804,6 +804,43 @@ DELETE FROM cmdsendboxmsgs_split  WHERE user_id='admin'   OR target_id='admin';
 localStorage，重新登录一次即可（新代码读到占位值会丢弃）。
 
 修复后：引擎日志里 `receiver:` 是 `FB1ALHa2Ze2` 这类随机串，客服端「消息」列表能看到用户会话。
+
+#### 5.2 根因修复：引擎身份 = 业务账号（2026-11-08 上线，存量已迁移）
+
+5. 与 5.1 都是在打补丁 —— 真正的根因是**引擎侧身份由引擎自造随机串**：同一个用户在业务库叫
+`zhangsan`、在 IM 里叫 `M_5kJw96BaX`，客服号/群成员/会话对端全部对不上号，第三方按账号联调也无从下手。
+现在从根上改掉：
+
+- 业务后端不再只把账号当"登录名"，而是**把账号本身当成引擎 user id**
+  （`chat.djnovels.com` 的 `services.IssueUserToken`，落库即
+  `users.user_id == users.login_account == 业务账号`），并把业务库的昵称/头像一并同步到引擎侧 ——
+  业务数据是唯一事实源，客户端不再需要"把业务身份换算成引擎 id"这一步；
+- 于是 `GET /api/chat/im-token` 返回的 `im_user_id` 就是业务用户名，客服号的 `service_user_id`
+  就是保留身份 `admin`。5.1 里"裸账号名必然是脏数据"这条判据随之作废：**现在裸账号名才是唯一正确形态**，
+  随机串反过来成了历史遗留。
+
+存量数据一次性对齐（工具在业务层仓库 `tools/imidentity-align`，幂等、默认干跑）：
+
+```bash
+cd /www/wwwroot/chat.djnovels.com/chat.djnovels.com     # 配置是相对路径，必须在仓库根目录执行
+go run ./tools/imidentity-align                          # 干跑：打印 old → new 映射与跳过项
+go run ./tools/imidentity-align -apply -map-out /root/db-backups/identity-align-map-<日期>.tsv
+go run ./tools/imidentity-align -verify-map /root/db-backups/identity-align-map-<日期>.tsv
+```
+
+它会改写 `users.user_id`、所有引用它的列（80+ 个）、私聊 `conver_id`（`min:max` 形态必须重排，
+否则引擎再也找不到会话）以及二进制消息体里内嵌的 sender/receiver（protobuf 长度前缀跟着一起改，
+不做裸字节替换）。
+
+**执行纪律**：先 `mysqldump im_db`，并在迁移期间停掉 `chat.djnovels.com` 与 `im.djnovels.com`
+（并发写入会带着旧 id 落库）。映射文件务必留存 —— `-verify-map` 靠它做全库复扫（列 / conver_id /
+消息体三类一起查），这也是唯一可信的"迁移干净"证据。
+
+迁移后自查（应为 0，只有没有业务账号的手工机器人行例外，工具会单独列出来）：
+
+```sql
+SELECT COUNT(*) FROM users WHERE app_key='dz.djnovels.com' AND login_account IS NOT NULL AND user_id <> login_account;
+```
 
 ### 6. 新用户是怎么进默认书友群的
 
