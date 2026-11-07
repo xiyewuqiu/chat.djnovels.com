@@ -1,0 +1,53 @@
+# IM 引擎的运行时配置。部署时放在 /opt/djnovels-im/im-server/conf/config.yml
+# 由 systemd 通过 -config 参数指定，见 deploy/systemd/djnovels-im-server.service。
+#
+# 改完执行：systemctl restart djnovels-im-server
+
+# 客户端长连接端口（WebSocket）
+defaultPort: 9003
+
+nodeName: jim-node-1
+nodeHost: 127.0.0.1
+
+# 必须保持 mysql：历史消息的过期清理只在 mysql 引擎下生效，
+# 切成 mongo 后清理会静默失效（services/historymsg/services/purgehismsg.go:66）。
+msgStoreEngine: mysql
+
+log:
+  logPath: ./logs
+  logName: jim-info
+  logExpireHours: 24
+
+# 内置 KV 存储，数据落在 logPath/kvdb_data 下
+kvdb:
+  isOpen: true
+
+mysql:
+  user: root
+  password: CHANGE_ME
+  address: 127.0.0.1:3306
+  name: im_db
+
+# mysql 模式下不使用，但保留结构便于切换
+mongodb:
+  address: 127.0.0.1:27017
+  name: jim_msgs
+
+# 服务端 REST API：只监听回环，供业务层和运维工具调用
+apiGateway:
+  httpPort: 9001
+
+# 客户端连接管理器
+connectManager:
+  wsPort: 9003
+
+# Navigator：向客户端下发长连接地址
+navGateway:
+  httpPort: 9002
+
+# 管理台：只监听回环，永远不要暴露到公网
+adminGateway:
+  httpPort: 8090
+
+# 引擎内部调用自身 API 使用
+imApiDomain: http://127.0.0.1:9001

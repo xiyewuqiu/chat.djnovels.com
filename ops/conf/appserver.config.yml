@@ -1,0 +1,33 @@
+# 业务层的运行时配置。部署时放在 /opt/djnovels-im/appserver/conf/config.yml
+#
+# 注意：业务层把路径写死为相对路径 conf/config.yml（commons/configures/configure.go:55），
+# 所以 systemd 的 WorkingDirectory 必须是 /opt/djnovels-im/appserver，不能改。
+#
+# 改完执行：systemctl restart djnovels-appserver
+
+port: 8070
+
+# 引擎回调本服务的端口（机器人消息等）。只监听回环。
+callbackPort: 8060
+
+log:
+  logPath: ./logs
+  logName: jugglechat-server
+
+mysql:
+  user: root
+  password: CHANGE_ME
+  address: 127.0.0.1:3306
+  # 与引擎共用一个库，不要改成别的名字
+  name: im_db
+
+# 业务层调用引擎服务端 API 的地址
+imApiDomain: http://127.0.0.1:9001
+
+# 引擎回推事件时使用的本服务地址
+callbackBaseUrl: http://127.0.0.1:8060
+
+botConnector:
+  domain: ""
+
+commercial: false
