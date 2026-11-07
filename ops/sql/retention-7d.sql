@@ -10,8 +10,9 @@
 -- （chatapi.djnovels.com/services/commonservices/appinfocache.go:197），
 -- 因此 HisMsgSaveDay -> his_msg_save_day。
 --
--- 执行：
---   docker compose exec -T mysql sh -c 'mysql -uroot -p"$MYSQL_ROOT_PASSWORD" im_db' < sql/retention-7d.sql
+-- 执行（宿主机直接连 MySQL，不使用容器）：
+--   mysql -uroot -p im_db < ops/sql/retention-7d.sql
+-- 把第 18 行的 REPLACE_WITH_APP_KEY 换成实际租户 appkey。
 --
 -- 引擎对 app 配置有 5–10 分钟缓存，执行后请重启 im-server 立即生效。
 
