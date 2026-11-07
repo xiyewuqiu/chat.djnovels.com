@@ -555,12 +555,11 @@ new WebSocket('wss://im.djnovels.com/im')
 
 能否建立连接——这一步不依赖任何业务代码。
 
-**c) 日志里出现 `nav.fake.com`**
+**c) 关于 `navList`（已核实，无需处理）**
 
-SDK 的 `navList` 参数缺省时会被填成 `["https://nav.fake.com"]`（见
-`node_modules/jugglechat-websdk/index.js`）。如果连接流程真的去请求它就会超时。
+SDK 里 `navList` 缺省会被填成 `["https://nav.fake.com"]`，看着像个坑。实际核查
+`node_modules/jugglechat-websdk/index.js`：`navList` 在整个产物里**只出现一次**，
+即解构赋值处本身，**没有任何代码读取它**。
 
-当前适配层**没有传 navList**，只传 `serverList`，按设计足以直连。若实测发现连接
-卡在这一步，需要把引擎的 nav 网关（`navGateway.httpPort`，默认 65102）也暴露出来
-并在 `provider.ts` 的 `init` 里一并传入。这一条尚未在真实环境验证过。
-
+结论：这个默认值是死代码，只要 `serverList` 有值就能直连。适配层不传 `navList` 是正确的，
+不必为了它去暴露 nav 网关。
