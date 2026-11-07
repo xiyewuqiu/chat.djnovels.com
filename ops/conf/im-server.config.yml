@@ -27,7 +27,7 @@ kvdb:
 
 mysql:
   user: root
-  password: CHANGE_ME
+  password: __DB_PASSWORD__
   address: 127.0.0.1:3306
   name: im_db
 
@@ -55,9 +55,11 @@ navGateway:
 adminGateway:
   httpPort: 65109
 
-# 管理台 JWT 签名密钥。留空时引擎会用硬编码的默认值 jug9le1m，
-# 等于任何人都能离线伪造管理台 token，必须设置。
-adminSecret: CHANGE_ME
+# 管理台 JWT 签名密钥。留空时引擎会用硬编码的默认值 jug9le1m
+# （imserver-console@v1.0.10/apis/validate.go:91），等于任何人都能离线伪造管理台 token，必须设置。
+# 必须与数据库口令不同源：用 openssl rand -base64 32 单独生成，
+# 不要拿它复用 __DB_PASSWORD__。
+adminSecret: __ADMIN_SECRET__
 
 # 引擎内部调用自身 API 使用
 imApiDomain: http://127.0.0.1:65101

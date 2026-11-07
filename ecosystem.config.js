@@ -7,7 +7,7 @@
 //     conf/config.yml（commons/configures/configure.go:55），改了就起不来
 //   - 日志 = logs/{out.log,error.log}
 //
-// 进程只在回环内监听，公网入口由 Nginx 的 443 提供（见 ops/nginx.conf）。
+// 进程只在回环内监听，公网入口由 Nginx 的 443 提供（见 ops/nginx-reference.conf）。
 // ============================================================
 module.exports = {
   apps: [{

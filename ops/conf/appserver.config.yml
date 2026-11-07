@@ -18,7 +18,7 @@ log:
 
 mysql:
   user: root
-  password: CHANGE_ME
+  password: __DB_PASSWORD__
   address: 127.0.0.1:3306
   # 与引擎共用一个库，不要改成别的名字
   name: im_db

@@ -55,6 +55,7 @@ pm2 flush "$APP_NAME" 2>/dev/null || true
 echo "✅ 日志已清理"
 
 echo "🔄 重启服务..."
-# 按 ecosystem.config.js 重启；进程尚未注册时 pm2 restart 会自动拉起
-pm2 restart "${APP_DIR}/ecosystem.config.js"
+# startOrReload：进程未注册时自动 start，已注册则 reload/restart。
+# 不能用 pm2 restart <配置文件>——进程还没注册时它不一定能把应用拉起来。
+pm2 startOrReload "${APP_DIR}/ecosystem.config.js"
 echo "✅ 服务已重启：${APP_NAME}"

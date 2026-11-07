@@ -17,8 +17,9 @@ IM_E2E_PASSWORD，其次取本机 ~/.im-e2e.pass（不存在则随机生成并�
 
 退出码 0 表示 ConnectAck 的 code 为 0。
 
-注意：引擎对未知 app_key 会缓存「不存在」结果且不过期（commonservices/appinfocache.go:227），
-所以**必须先建租户再跑本脚本**；若顺序反了，`pm2 restart im.djnovels.com` 清掉负缓存即可。
+注意：引擎会把「app_key 不存在」也写进 appinfo 缓存（commonservices/appinfocache.go:227），
+该缓存读后 5 分钟、创建后 10 分钟过期（appinfocache.go:109-110）。所以**必须先建租户再跑本脚本**；
+顺序反了就等 10 分钟，或用 `pm2 restart im.djnovels.com` 立即清掉。
 """
 import base64, json, os, socket, ssl, struct, sys, urllib.error, urllib.request
 

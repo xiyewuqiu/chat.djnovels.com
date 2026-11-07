@@ -119,12 +119,16 @@ git clone -b dev https://github.com/juggleim/im-server.git   im.djnovels.com
 # 2) 引擎的运行期资产（上游 .gitignore 已忽略该目录，不会污染仓库）
 cd im.djnovels.com/launcher && mkdir -p build/conf build/logs
 
-# 3) 运行时配置：从模板复制，替换数据库密码
-sed 's/CHANGE_ME/数据库密码/g' \
+# 3) 运行时配置：数据库口令按实际填，管理台密钥必须单独随机生成
+DB_PASS='改成你的数据库密码'
+ADMIN_SECRET="$(openssl rand -base64 32)"
+sed -e "s|__DB_PASSWORD__|${DB_PASS}|" -e "s|__ADMIN_SECRET__|${ADMIN_SECRET}|" \
   ../../chat.djnovels.com/ops/conf/im-server.config.yml > build/conf/config.yml
 cd ../../chat.djnovels.com
-sed 's/CHANGE_ME/数据库密码/g' ops/conf/appserver.config.yml > conf/config.yml
+sed -e "s|__DB_PASSWORD__|${DB_PASS}|" ops/conf/appserver.config.yml > conf/config.yml
 chmod 600 conf/config.yml ../im.djnovels.com/launcher/build/conf/config.yml
+# 注意：不要把 adminSecret 设成数据库口令。两者复用意味着拿到数据库口令的人
+# 可以离线伪造管理台 token，反之亦然。
 
 # 4) 数据库（见第 5 节）
 # 5) 编译（见第 3 节）
@@ -309,9 +313,10 @@ curl -s -X POST http://127.0.0.1:65109/admingateway/apps/create \
      -d '{"app_key":"smoketest","app_name":"Smoke Test"}'
 ```
 
-顺序不能反：引擎对未知 `app_key` 会缓存「不存在」且**不过期**
-（`services/commonservices/appinfocache.go:227`），先跑脚本再建租户会让它一直报错，
-用 `pm2 restart im.djnovels.com` 清掉负缓存即可。
+顺序不能反：引擎会把「app_key 不存在」也写进 appinfo 缓存
+（`services/commonservices/appinfocache.go:227`）。这个缓存的存活策略是读后 5 分钟、创建后 10 分钟
+（`appinfocache.go:109-110`），所以顺序反了会**最多报错 10 分钟**，不是永久。
+急着重试就 `pm2 restart im.djnovels.com` 立即清掉。
 
 ---
 
