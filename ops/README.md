@@ -133,10 +133,12 @@ cd im.djnovels.com/launcher && mkdir -p build/conf build/logs
 # 3) 运行时配置：数据库口令按实际填，管理台密钥必须单独随机生成
 DB_PASS='改成你的数据库密码'
 ADMIN_SECRET="$(openssl rand -base64 32)"
+SERVICE_KEY="$(openssl rand -base64 32)"
 sed -e "s|__DB_PASSWORD__|${DB_PASS}|" -e "s|__ADMIN_SECRET__|${ADMIN_SECRET}|" \
   ../../chat.djnovels.com/ops/conf/im-server.config.yml > build/conf/config.yml
 cd ../../chat.djnovels.com
-sed -e "s|__DB_PASSWORD__|${DB_PASS}|" ops/conf/appserver.config.yml > conf/config.yml
+sed -e "s|__DB_PASSWORD__|${DB_PASS}|" -e "s|__SERVICE_KEY__|${SERVICE_KEY}|" \
+  ops/conf/appserver.config.yml > conf/config.yml
 chmod 600 conf/config.yml ../im.djnovels.com/launcher/build/conf/config.yml
 # 注意：不要把 adminSecret 设成数据库口令。两者复用意味着拿到数据库口令的人
 # 可以离线伪造管理台 token，反之亦然。
@@ -490,3 +492,44 @@ mux.Handle("/jim/", ginEngine)
 
 Nginx 收敛只是第二道锁，第一道必须是防火墙：65103 要在 ufw 和面板防火墙里同时保持关闭。
 端口一旦放开，客户端可能连到旧版本，表现为「功能时好时坏」。
+
+---
+
+## 自营 IM 切换的服务器验证
+
+前端已不再依赖腾讯 IM SDK，聊天凭据统一由 `auth.djnovels.com` 的
+`GET /api/chat/im-token` 下发。上线顺序固定为：**先配密钥 → 再发后端 → 后发前端**。
+
+### 1. auth 服务需要的三个变量
+
+| 变量 | 取值 | 留空的后果 |
+|---|---|---|
+| `WYC_SELF_IM_APP_KEY` | 租户 appkey | `/api/chat/im-token` 返回 503 |
+| `WYC_SELF_IM_API_BASE` | `https://chat.djnovels.com` | 同上 |
+| `WYC_SELF_IM_SERVICE_KEY` | 与业务层 `serviceKey` 完全一致 | 同上 |
+
+三者缺一，接口按设计拒绝下发，不会返回空 token 让客户端连一个假连接。
+
+### 2. 端到端验证
+
+在业务层仓库根目录执行：
+
+```bash
+IM_E2E_SERVICE_KEY=<serviceKey> python3 ops/tools/im_e2e.py
+```
+
+脚本做四件事：服务密钥换凭据 → WebSocket 握手 → 发 ConnectMsg → 校验 ConnectAck。
+
+- 输出 `✅ 端到端通过` 且退出码 0，说明**注册即入租户、凭据可连引擎**这条路是通的。
+- `❌ 换凭据失败`：密钥与业务层不一致，或服务端未重启。
+- `❌ 登录失败` 且看到 `17011` / `17013`：说明没配服务密钥、脚本退化到了账号密码模式；
+  业务层的注册接口需要手机/邮箱验证码，裸注册必然失败，属于预期。
+
+### 3. 前端产物自查
+
+```bash
+npm run build && ls dist/client/assets/js | grep -c tencent   # 期望输出 0
+```
+
+分包里不应再出现任何 `tencent` 产物；`feature-chat` 体积应在 600 KB 左右
+（迁移前连同腾讯 SDK 约 2.5 MB）。
