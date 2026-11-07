@@ -3,7 +3,10 @@
 //
 // 这是本定义的唯一来源：引擎仓库里放不下（上游 .gitignore 用 `**/build`
 // 忽略了 launcher/build），所以版本化在这里，PM2 按绝对路径加载：
-//     pm2 startOrReload /www/wwwroot/chat.djnovels.com/chat.djnovels.com/ops/conf/ecosystem.im-server.js
+//     pm2 startOrReload /www/wwwroot/chat.djnovels.com/chat.djnovels.com/ops/conf/ecosystem.im-server.config.js
+// 文件名必须以 .config.js 结尾：PM2 的 Common.isConfigFile() 用子串匹配白名单
+// （.json/.yml/.yaml/.config.js/.config.cjs/.config.mjs），换个名字会被当成普通
+// JS 脚本用 node 跑起来，进程起来了但引擎没重启。
 // 改动后执行 `pm2 save` 固化，否则重启机器会回到旧定义。
 //
 // 部署契约：
@@ -41,6 +44,9 @@ module.exports = {
     // 长连接服务的内存随在线数线性增长（每连接几十 KB），阈值必须远高于
     // 日常水位：1.5G 在几万在线时会被误判为泄漏，触发一次全员掉线。
     // 6G 只作真·泄漏的兜底，正常水位永远碰不到。
+    // 前提：机器物理内存要明显大于 6G。小于 6G 时这个阈值永不触发，
+    // 真正越界的是内核 OOM killer——不写日志、没有 PM2 重启记录，排查更难。
+    // 内存不足就把这里改成物理内存的 70%–80%。
     max_memory_restart: '6G',
 
     // 存活满 10 秒才算启动成功；连续 10 次异常重启后放弃，避免崩溃循环
