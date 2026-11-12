@@ -105,6 +105,17 @@ func InternalBanUsers(ctx *gin.Context) {
 	responses.SuccessHttpResp(ctx, nil)
 }
 
+// InternalQryAdminAudits 管理操作审计列表（服务密钥）。
+func InternalQryAdminAudits(ctx *gin.Context) {
+	limit, _ := strconv.ParseInt(ctx.Query("limit"), 10, 64)
+	code, resp := services.QryAdminAudits(ctxs.ToCtx(ctx), ctx.Query("action"), limit, ctx.Query("offset"))
+	if code != errs.IMErrorCode_SUCCESS {
+		responses.ErrorHttpResp(ctx, code)
+		return
+	}
+	responses.SuccessHttpResp(ctx, resp)
+}
+
 // InternalUnbanUsers 解除封禁（服务密钥）。
 func InternalUnbanUsers(ctx *gin.Context) {
 	req := &models.InternalUnbanUsersReq{}

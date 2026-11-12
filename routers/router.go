@@ -138,6 +138,7 @@ func Route(eng *gin.Engine, prefix string) *gin.RouterGroup {
 	internalGroup.POST("/announcements/send", apis.InternalSendAnnouncement)
 	internalGroup.POST("/users/ban", apis.InternalBanUsers)
 	internalGroup.POST("/users/unban", apis.InternalUnbanUsers)
+	internalGroup.GET("/audits/list", apis.InternalQryAdminAudits)
 	return group
 }
 

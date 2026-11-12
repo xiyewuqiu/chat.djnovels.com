@@ -378,3 +378,15 @@ CREATE TABLE IF NOT EXISTS `reports` (
   KEY `idx_report_status` (`app_key`,`status`,`id`),
   KEY `idx_report_reporter` (`app_key`,`reporter_id`,`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
+CREATE TABLE IF NOT EXISTS `admin_audits` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `app_key` varchar(64) COLLATE utf8mb4_bin NOT NULL,
+  `operator_id` varchar(64) COLLATE utf8mb4_bin NOT NULL DEFAULT '',
+  `action` varchar(64) COLLATE utf8mb4_bin NOT NULL,
+  `target` varchar(255) NOT NULL DEFAULT '',
+  `detail` varchar(500) NOT NULL DEFAULT '',
+  `created_time` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  KEY `idx_audit_action` (`app_key`,`action`,`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

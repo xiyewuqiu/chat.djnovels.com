@@ -884,7 +884,8 @@ SELECT COUNT(*) FROM users WHERE app_key='dz.djnovels.com' AND login_account IS 
 | 处理举报 | `POST /jim/internal/reports/handle` | `{"report_ids":[1,2],"action":1,"result":"广告刷屏，已封禁","operator_id":"ops-a"}`；action 1 通过 / 2 驳回 |
 | 封禁 | `POST /jim/internal/users/ban` | `{"items":[{"user_id":"u1","duration_seconds":2592000}]}`，`duration_seconds` ≤0 表示永久 |
 | 解封 | `POST /jim/internal/users/unban` | `{"user_ids":["u1"]}` |
-| 全站公告 | `POST /jim/internal/announcements/send` | `{"content":"系统维护通知"}`，缺省发送者 `kefu` |
+| 全站公告 | `POST /jim/internal/announcements/send` | `{"content":"系统维护通知","operator_id":"ops-a"}`，缺省发送者 `kefu` |
+| 查审计 | `GET /jim/internal/audits/list?action=&limit=20&offset=` | `action` 可填 `report.handle`、`announcement.send`、`user.ban`、`user.unban`；空为全部 |
 
 统一要求两个头：`X-Service-Key: <serviceKey>` 与 `appkey: <appkey>`；
 **公网 Nginx 必须继续拒绝 `/jim/internal/`**。举报表由迁移

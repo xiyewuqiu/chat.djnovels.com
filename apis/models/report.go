@@ -55,8 +55,9 @@ type HandleReportsReq struct {
 
 // InternalBroadcastReq 全站公告。sender_id 缺省用官方客服 kefu。
 type InternalBroadcastReq struct {
-	Content  string `json:"content"`
-	SenderId string `json:"sender_id"`
+	Content    string `json:"content"`
+	SenderId   string `json:"sender_id"`
+	OperatorId string `json:"operator_id"`
 }
 
 type InternalBanUserReq struct {
@@ -67,9 +68,11 @@ type InternalBanUserReq struct {
 }
 
 type InternalBanUsersReq struct {
-	Items []*InternalBanUserReq `json:"items"`
+	Items      []*InternalBanUserReq `json:"items"`
+	OperatorId string                `json:"operator_id"`
 }
 
 type InternalUnbanUsersReq struct {
-	UserIds []string `json:"user_ids"`
+	UserIds    []string `json:"user_ids"`
+	OperatorId string   `json:"operator_id"`
 }

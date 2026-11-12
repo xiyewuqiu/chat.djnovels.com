@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -149,6 +150,8 @@ func HandleReports(ctx context.Context, req *apimodels.HandleReportsReq) (errs.I
 		return errs.IMErrorCode_APP_DEFAULT, 0
 	}
 	notifyReporters(appkey, reports, status, result)
+	RecordAdminAudit(ctx, req.OperatorId, dbmodels.AdminAuditAction_ReportHandle,
+		joinReportIds(req.ReportIds), fmt.Sprintf("%s %s", actionText(req.Action), result))
 	return errs.IMErrorCode_SUCCESS, affected
 }
 
@@ -236,4 +239,24 @@ func startIdFromOffset(offset string) int64 {
 		return 0
 	}
 	return id
+}
+
+// joinReportIds 把举报 id 列表拼成审计里的 target 字段。
+func joinReportIds(ids []int64) string {
+	parts := make([]string, 0, len(ids))
+	for _, id := range ids {
+		parts = append(parts, strconv.FormatInt(id, 10))
+	}
+	return strings.Join(parts, ",")
+}
+
+// actionText 把处理动作翻成审计可读文案。
+func actionText(action int) string {
+	switch action {
+	case apimodels.ReportAction_Accept:
+		return "通过"
+	case apimodels.ReportAction_Reject:
+		return "驳回"
+	}
+	return "未知动作"
 }

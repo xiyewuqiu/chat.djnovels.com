@@ -79,3 +79,7 @@ func NewSensitiveWordStorage() models.ISensitiveWordStorage {
 func NewReportStorage() models.IReportStorage {
 	return &dbs.ReportDao{}
 }
+
+func NewAdminAuditStorage() models.IAdminAuditStorage {
+	return &dbs.AdminAuditDao{}
+}

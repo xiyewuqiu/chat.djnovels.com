@@ -4,7 +4,7 @@
 
 - 主业务接口：92 个，统一使用 `/jim` 前缀。
 - 助手回调接口：1 个，使用独立的 `/callback` 前缀和端口。
-- 合计：93 个 `method + path` 接口；另有 7 个内部接口（`/jim/internal/*`，服务密钥鉴权，不计入上述统计）。
+- 合计：93 个 `method + path` 接口；另有 8 个内部接口（`/jim/internal/*`，服务密钥鉴权，不计入上述统计）。
 - 文档反映当前代码行为；代码中没有显式实现的校验、权限或数据清理能力，不应视为接口保证。
 
 ## 1. 服务地址
@@ -1526,8 +1526,9 @@ POST /callback/assistants/msgcallback
 | `POST /jim/internal/group-member` | 幂等加群成员（注册即入群用） | `group_id`、`user_ids` |
 | `GET /jim/internal/reports/list` | 举报列表，`status` 缺省 0（待处理） | Query：`status`、`limit`、`offset` |
 | `POST /jim/internal/reports/handle` | 批量处理举报 | `report_ids`、`action`(1 通过/2 驳回)、`result`、`operator_id` |
-| `POST /jim/internal/announcements/send` | 全站公告 | `content`（≤2000 字）、`sender_id`（缺省 `kefu`） |
-| `POST /jim/internal/users/ban` | 封禁账号 | `items:[{user_id,duration_seconds,ext}]`，`duration_seconds` ≤0 为永久 |
-| `POST /jim/internal/users/unban` | 解除封禁 | `user_ids` |
+| `POST /jim/internal/announcements/send` | 全站公告 | `content`（≤2000 字）、`sender_id`（缺省 `kefu`）、`operator_id` |
+| `POST /jim/internal/users/ban` | 封禁账号 | `items:[{user_id,duration_seconds,ext}]`、`operator_id`；`duration_seconds` ≤0 为永久 |
+| `POST /jim/internal/users/unban` | 解除封禁 | `user_ids`、`operator_id` |
+| `GET /jim/internal/audits/list` | 管理操作审计 | Query：`action`（空=全部）、`limit`（默认 20，上限 100）、`offset` |
 
 失败语义与普通接口一致：HTTP 200 + 业务码；未配置 `serviceKey` 时一律 `17005`。
