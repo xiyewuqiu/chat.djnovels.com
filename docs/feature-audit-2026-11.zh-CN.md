@@ -112,6 +112,12 @@
 **改法**：公开标记写 `groupinfoexts.is_public`（不动 `groupinfos` 表结构，不影响引擎解读）；`POST /jim/groups/setpublic` 仅群主/管理员可调；`POST /jim/groups/discover` 按群名搜索、游标分页，成员数与"我是否在群"用批量查询，不产生 N+1。
 **验证**：`routers/router_test.go`；DAO 走连表查询，口径见 `storages/dbs/groupdao.go`。
 
+### 4.5 对象级越权（P0）
+
+**问题**：`/users/update` 与 `/users/updpass` 从 body 取 `user_id`，Service 层直接拿它操作数据库。任何登录用户都能改别人的昵称/头像；改密接口则变成"任意账号的密码校验器"（知道旧密码就能改别人的密码）。`/users/del` 已经有自身校验，是唯一没中招的。
+**改法**：两个 Service 入口先比对 `CtxKey_RequesterId`，不一致直接 `17018`，随后把 `user_id` 覆写成登录身份。放在 Service 层而不是 Handler，避免以后新增入口再绕过。
+**验证**：`services/userservice_authz_test.go`（越权、无登录态、自身删除三条）。
+
 ---
 
 ## 5. 待办清单
@@ -125,22 +131,21 @@
    修法：v2 路由组加校验 `X-Admin-Token`（比对 `configures.Config.AdminSecret`），或直接删掉 v2
    与 `admin.html`，回到上游 console。未做修改的原因：该目录是未提交的进行中改动，动它会和 WIP 冲突。
 2. Callback 签名：`/callback/assistants/msgcallback` 目前无来源校验且失败也返回成功，可被伪造为助手消息。
-3. 对象级授权：`/users/updpass` 从 body 取 `user_id`，应改为"只能改自己"。
-4. Telegram Bot 列表返回完整 Token，改为脱敏或限权。
-5. SHA1 改 Argon2id/bcrypt：登录、改密、重置三处一起迁移，存量按登录时透明升级。
+3. Telegram Bot 列表返回完整 Token，改为脱敏或限权。
+4. SHA1 改 Argon2id/bcrypt：登录、改密、重置三处一起迁移，存量按登录时透明升级。
 
 **P1（产品，需要客户端配合）**
-6. 消息搜索：引擎加 `/hismsgs/search`＋内容索引，客户端加搜索页。
-7. 举报闭环：举报表＋运营审核接口＋处理通知。
-8. 全站公告：业务层内部接口调用引擎广播。
-9. 验证码一次性消费＋重置密码后踢掉旧设备。
-10. 数据导出（GDPR/PIPL 口径）。
+5. 消息搜索：引擎加 `/hismsgs/search`＋内容索引，客户端加搜索页。
+6. 举报闭环：举报表＋运营审核接口＋处理通知。
+7. 全站公告：业务层内部接口调用引擎广播。
+8. 验证码一次性消费＋重置密码后踢掉旧设备。
+9. 数据导出（GDPR/PIPL 口径）。
 
 **P2（平台化）**
-11. 对外 Webhook 订阅（引擎已有 webhook_engine，业务层缺投递与签名）。
-12. 管理操作审计日志。
-13. 租户开通 API（建 app＋下发保留期配置）。
-14. 附件配额与对象存储生命周期（与 7 天保留契约配套）。
+10. 对外 Webhook 订阅（引擎已有 webhook_engine，业务层缺投递与签名）。
+11. 管理操作审计日志。
+12. 租户开通 API（建 app＋下发保留期配置）。
+13. 附件配额与对象存储生命周期（与 7 天保留契约配套）。
 
 ---
 

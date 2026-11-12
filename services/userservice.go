@@ -214,6 +214,13 @@ func SetUserAccount(ctx context.Context, req *apimodels.SetUserAccountReq) errs.
 }
 
 func UpdateUser(ctx context.Context, req *apimodels.UserObj) errs.IMErrorCode {
+	// 资料修改只允许作用于自己：body 里的 user_id 与登录身份不一致时直接拒绝，
+	// 否则任何登录用户都能改别人的昵称和头像。
+	requestId := ctxs.GetRequesterIdFromCtx(ctx)
+	if requestId == "" || (req.UserId != "" && req.UserId != requestId) {
+		return errs.IMErrorCode_APP_FORBIDDEN
+	}
+	req.UserId = requestId
 	if ok, _ := CheckSensitiveText(ctx, req.Nickname); !ok {
 		return errs.IMErrorCode_APP_Sensitive
 	}
@@ -246,6 +253,12 @@ func DelUser(ctx context.Context, userId string) errs.IMErrorCode {
 }
 
 func UpdatePass(ctx context.Context, req *apimodels.UpdUserPassReq) errs.IMErrorCode {
+	// 改密只允许改自己的：否则 body 里的 user_id 就是一个"任意账号密码校验器"。
+	requestId := ctxs.GetRequesterIdFromCtx(ctx)
+	if requestId == "" || (req.UserId != "" && req.UserId != requestId) {
+		return errs.IMErrorCode_APP_FORBIDDEN
+	}
+	req.UserId = requestId
 	appkey := ctxs.GetAppKeyFromCtx(ctx)
 	storage := storages.NewUserStorage()
 	user, err := storage.FindByUserId(appkey, req.UserId)
