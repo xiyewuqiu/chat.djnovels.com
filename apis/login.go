@@ -39,6 +39,11 @@ func Login(ctx *gin.Context) {
 		responses.ErrorHttpResp(ctx, errs.IMErrorCode_APP_NOT_EXISTED)
 		return
 	}
+	identity := loginIdentity(req.Account, req.Phone, req.Email)
+	if ok, retry := services.AllowLoginAttempt(appkey, identity, ctx.ClientIP()); !ok {
+		rejectRateLimited(ctx, retry)
+		return
+	}
 	storage := storages.NewUserStorage()
 	var err error
 	var user *dbModels.User
@@ -57,6 +62,7 @@ func Login(ctx *gin.Context) {
 		responses.ErrorHttpResp(ctx, errs.IMErrorCode_APP_LOGIN_ERR_PASS)
 		return
 	}
+	services.ResetLoginAttempts(appkey, identity)
 	sdk := imsdk.GetImSdk(appkey)
 	if sdk == nil {
 		responses.ErrorHttpResp(ctx, errs.IMErrorCode_APP_NOT_EXISTED)
@@ -125,6 +131,10 @@ func Register(ctx *gin.Context) {
 			AppKey:       appkey,
 		})
 	} else if req.Phone != "" {
+		if ok, retry := services.AllowVerifyAttempt(appkey, req.Phone); !ok {
+			rejectRateLimited(ctx, retry)
+			return
+		}
 		code := services.CheckPhoneSmsCode(ctxs.ToCtx(ctx), req.Phone, req.Code)
 		if code != errs.IMErrorCode_SUCCESS {
 			responses.ErrorHttpResp(ctx, code)
@@ -175,6 +185,10 @@ func SmsSend(ctx *gin.Context) {
 		responses.ErrorHttpResp(ctx, errs.IMErrorCode_APP_REQ_BODY_ILLEGAL)
 		return
 	}
+	if ok, retry := services.AllowSendVerifyCode(ctx.GetString(string(ctxs.CtxKey_AppKey)), req.Phone, ctx.ClientIP()); !ok {
+		rejectRateLimited(ctx, retry)
+		return
+	}
 	code := services.SmsSend(ctxs.ToCtx(ctx), req.Phone)
 	if code != errs.IMErrorCode_SUCCESS {
 		responses.ErrorHttpResp(ctx, code)
@@ -189,9 +203,13 @@ func SmsLogin(ctx *gin.Context) {
 		responses.ErrorHttpResp(ctx, errs.IMErrorCode_APP_REQ_BODY_ILLEGAL)
 		return
 	}
+	appkey := ctx.GetString(string(ctxs.CtxKey_AppKey))
+	if ok, retry := services.AllowVerifyAttempt(appkey, req.Phone); !ok {
+		rejectRateLimited(ctx, retry)
+		return
+	}
 	code := services.CheckPhoneSmsCode(ctxs.ToCtx(ctx), req.Phone, req.Code)
 	if code == errs.IMErrorCode_SUCCESS {
-		appkey := ctx.GetString(string(ctxs.CtxKey_AppKey))
 		userId := utils.ShortMd5(req.Phone)
 		nickname := fmt.Sprintf("user%05d", utils.RandInt(100000))
 		userPortrait := ""
@@ -279,6 +297,10 @@ func EmailSend(ctx *gin.Context) {
 		responses.ErrorHttpResp(ctx, errs.IMErrorCode_APP_REQ_BODY_ILLEGAL)
 		return
 	}
+	if ok, retry := services.AllowSendVerifyCode(ctx.GetString(string(ctxs.CtxKey_AppKey)), req.Email, ctx.ClientIP()); !ok {
+		rejectRateLimited(ctx, retry)
+		return
+	}
 	code := services.MailSend(ctxs.ToCtx(ctx), req.Email)
 	if code != errs.IMErrorCode_SUCCESS {
 		responses.ErrorHttpResp(ctx, code)
@@ -291,6 +313,10 @@ func EmailLogin(ctx *gin.Context) {
 	req := &models.EmailLoginReq{}
 	if err := ctx.BindJSON(req); err != nil || req.Email == "" {
 		responses.ErrorHttpResp(ctx, errs.IMErrorCode_APP_REQ_BODY_ILLEGAL)
+		return
+	}
+	if ok, retry := services.AllowVerifyAttempt(ctx.GetString(string(ctxs.CtxKey_AppKey)), req.Email); !ok {
+		rejectRateLimited(ctx, retry)
 		return
 	}
 	code := services.CheckEmailCode(ctxs.ToCtx(ctx), req.Email, req.Code)

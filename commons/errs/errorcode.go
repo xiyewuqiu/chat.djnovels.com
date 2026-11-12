@@ -31,6 +31,7 @@ var (
 	IMErrorCode_APP_Sensitive           IMErrorCode = 17016
 	IMErrorCode_APP_ParamError          IMErrorCode = 17017
 	IMErrorCode_APP_FORBIDDEN           IMErrorCode = 17018
+	IMErrorCode_APP_RATE_LIMITED        IMErrorCode = 17019
 
 	//friends
 	IMErrorCode_APP_FRIEND_DEFAULT         IMErrorCode = 17100
@@ -58,7 +59,9 @@ var (
 
 var imCode2ApiErrorMap map[IMErrorCode]*ApiErrorMsg = map[IMErrorCode]*ApiErrorMsg{
 	//api
-	IMErrorCode_SUCCESS: newApiErrorMsg(200, IMErrorCode_SUCCESS, "success"),
+	// 限流沿用项目约定：HTTP 200 + 业务码，客户端只需检查 code。
+	IMErrorCode_SUCCESS:          newApiErrorMsg(200, IMErrorCode_SUCCESS, "success"),
+	IMErrorCode_APP_RATE_LIMITED: newApiErrorMsg(200, IMErrorCode_APP_RATE_LIMITED, "too many requests, retry later"),
 }
 
 func GetApiErrorByCode(code IMErrorCode) *ApiErrorMsg {

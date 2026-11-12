@@ -201,6 +201,10 @@ func BindEmailSendEmail(ctx *gin.Context) {
 		responses.ErrorHttpResp(ctx, errs.IMErrorCode_APP_REQ_BODY_ILLEGAL)
 		return
 	}
+	if ok, retry := services.AllowSendVerifyCode(ctx.GetString(string(ctxs.CtxKey_AppKey)), req.Email, ctx.ClientIP()); !ok {
+		rejectRateLimited(ctx, retry)
+		return
+	}
 	code := services.BindEmailSendEmail(ctxs.ToCtx(ctx), req)
 	if code != errs.IMErrorCode_SUCCESS {
 		responses.ErrorHttpResp(ctx, code)
@@ -213,6 +217,10 @@ func BindEmail(ctx *gin.Context) {
 	req := &models.BindEmailReq{}
 	if err := ctx.BindJSON(req); err != nil || req.Email == "" || req.Code == "" {
 		responses.ErrorHttpResp(ctx, errs.IMErrorCode_APP_REQ_BODY_ILLEGAL)
+		return
+	}
+	if ok, retry := services.AllowVerifyAttempt(ctx.GetString(string(ctxs.CtxKey_AppKey)), req.Email); !ok {
+		rejectRateLimited(ctx, retry)
 		return
 	}
 	code := services.BindEmail(ctxs.ToCtx(ctx), req)
@@ -229,6 +237,10 @@ func BindPhoneSendSms(ctx *gin.Context) {
 		responses.ErrorHttpResp(ctx, errs.IMErrorCode_APP_REQ_BODY_ILLEGAL)
 		return
 	}
+	if ok, retry := services.AllowSendVerifyCode(ctx.GetString(string(ctxs.CtxKey_AppKey)), req.Phone, ctx.ClientIP()); !ok {
+		rejectRateLimited(ctx, retry)
+		return
+	}
 	code := services.BindPhoneSendSms(ctxs.ToCtx(ctx), req)
 	if code != errs.IMErrorCode_SUCCESS {
 		responses.ErrorHttpResp(ctx, code)
@@ -241,6 +253,10 @@ func BindPhone(ctx *gin.Context) {
 	req := &models.BindPhoneReq{}
 	if err := ctx.BindJSON(req); err != nil || req.Phone == "" || req.Code == "" {
 		responses.ErrorHttpResp(ctx, errs.IMErrorCode_APP_REQ_BODY_ILLEGAL)
+		return
+	}
+	if ok, retry := services.AllowVerifyAttempt(ctx.GetString(string(ctxs.CtxKey_AppKey)), req.Phone); !ok {
+		rejectRateLimited(ctx, retry)
 		return
 	}
 	code := services.BindPhone(ctxs.ToCtx(ctx), req)
