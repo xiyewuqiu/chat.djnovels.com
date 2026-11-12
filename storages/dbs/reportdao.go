@@ -59,6 +59,18 @@ func (r ReportDao) QryByStatus(appkey string, status int, startId, limit int64) 
 	return queryReports(query, startId, limit)
 }
 
+// FindByIds 按 id 批量取举报，供处理前读取举报人。
+func (r ReportDao) FindByIds(appkey string, ids []int64) ([]*models.Report, error) {
+	if len(ids) == 0 {
+		return []*models.Report{}, nil
+	}
+	var items []*ReportDao
+	if err := dbcommons.GetDb().Where("app_key=? AND id IN(?)", appkey, ids).Find(&items).Error; err != nil {
+		return nil, err
+	}
+	return toReportModels(items), nil
+}
+
 // UpdateStatus 批量写入处理结果，返回受影响行数。
 func (r ReportDao) UpdateStatus(appkey string, ids []int64, status int, handlerId, result string) (int64, error) {
 	if len(ids) == 0 {
@@ -83,6 +95,10 @@ func queryReports(query *gorm.DB, startId, limit int64) ([]*models.Report, error
 	if err := query.Order("id desc").Limit(int(limit)).Find(&items).Error; err != nil {
 		return nil, err
 	}
+	return toReportModels(items), nil
+}
+
+func toReportModels(items []*ReportDao) []*models.Report {
 	ret := make([]*models.Report, 0, len(items))
 	for _, item := range items {
 		ret = append(ret, &models.Report{
@@ -102,5 +118,5 @@ func queryReports(query *gorm.DB, startId, limit int64) ([]*models.Report, error
 			UpdatedTime:   item.UpdatedTime,
 		})
 	}
-	return ret, nil
+	return ret
 }

@@ -2,15 +2,19 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"unicode/utf8"
 
 	apimodels "github.com/juggleim/jugglechat-server/apis/models"
 	"github.com/juggleim/jugglechat-server/commons/ctxs"
 	"github.com/juggleim/jugglechat-server/commons/errs"
+	"github.com/juggleim/jugglechat-server/commons/imsdk"
 	utils "github.com/juggleim/jugglechat-server/commons/tools"
 	"github.com/juggleim/jugglechat-server/storages"
 	dbmodels "github.com/juggleim/jugglechat-server/storages/models"
+
+	juggleimsdk "github.com/juggleim/imserver-sdk-go"
 )
 
 const (
@@ -19,6 +23,8 @@ const (
 	reportMaxDescriptionRunes = 200
 	reportMaxResultRunes      = 200
 	reportMaxHandleBatch      = 100
+	// 处理结果通知用官方客服身份发出，与欢迎语同源，用户认得。
+	reportNoticeSenderId = "kefu"
 )
 
 // AddReport 记录一条举报。只做事实登记，不在这里执行任何处置动作；
@@ -133,11 +139,58 @@ func HandleReports(ctx context.Context, req *apimodels.HandleReportsReq) (errs.I
 		return errs.IMErrorCode_APP_REQ_BODY_ILLEGAL, 0
 	}
 
-	affected, err := storages.NewReportStorage().UpdateStatus(appkey, req.ReportIds, status, strings.TrimSpace(req.OperatorId), result)
+	storage := storages.NewReportStorage()
+	reports, err := storage.FindByIds(appkey, req.ReportIds)
 	if err != nil {
 		return errs.IMErrorCode_APP_DEFAULT, 0
 	}
+	affected, err := storage.UpdateStatus(appkey, req.ReportIds, status, strings.TrimSpace(req.OperatorId), result)
+	if err != nil {
+		return errs.IMErrorCode_APP_DEFAULT, 0
+	}
+	notifyReporters(appkey, reports, status, result)
 	return errs.IMErrorCode_SUCCESS, affected
+}
+
+// notifyReporters 给举报人回一条处理结果，按人聚合，避免一次处理刷一屏消息。
+// 通知失败不影响处理结果：工单已经落库，消息补发由运营侧另行处理。
+func notifyReporters(appkey string, reports []*dbmodels.Report, status int, result string) {
+	if len(reports) == 0 {
+		return
+	}
+	sdk := imsdk.GetImSdk(appkey)
+	if sdk == nil {
+		return
+	}
+	counts := map[string]int{}
+	for _, report := range reports {
+		counts[report.ReporterId]++
+	}
+	for reporterId, count := range counts {
+		content := buildReportNotice(status, count, result)
+		_, _, err := sdk.SendPrivateMsg(juggleimsdk.Message{
+			SenderId:   reportNoticeSenderId,
+			TargetId:   reporterId,
+			MsgType:    "jg:text",
+			MsgContent: utils.ToJson(map[string]string{"content": content}),
+		})
+		if err != nil {
+			fmt.Println("[report] notify reporter failed:", reporterId, err)
+		}
+	}
+}
+
+// buildReportNotice 生成举报处理通知文案。抽成纯函数，便于覆盖两种结论。
+func buildReportNotice(status, count int, result string) string {
+	verdict := "已处理"
+	if status == apimodels.ReportStatus_Rejected {
+		verdict = "未通过"
+	}
+	notice := fmt.Sprintf("你的举报（%d 条）%s。", count, verdict)
+	if result != "" {
+		notice += "处理说明：" + result
+	}
+	return notice
 }
 
 func buildReportsResp(reports []*dbmodels.Report) *apimodels.ReportsResp {

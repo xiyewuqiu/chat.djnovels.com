@@ -113,3 +113,17 @@ func TestBanUsersValidatesInput(t *testing.T) {
 		t.Fatalf("empty unban: got %d", code)
 	}
 }
+
+func TestBuildReportNoticeCoversBothVerdicts(t *testing.T) {
+	accepted := buildReportNotice(apimodels.ReportStatus_Accepted, 2, "已封禁")
+	if !strings.Contains(accepted, "2 条") || !strings.Contains(accepted, "已处理") || !strings.Contains(accepted, "已封禁") {
+		t.Fatalf("accepted notice = %q", accepted)
+	}
+	rejected := buildReportNotice(apimodels.ReportStatus_Rejected, 1, "")
+	if !strings.Contains(rejected, "未通过") {
+		t.Fatalf("rejected notice = %q", rejected)
+	}
+	if strings.Contains(rejected, "处理说明") {
+		t.Fatalf("empty result must not add a remark: %q", rejected)
+	}
+}

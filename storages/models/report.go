@@ -37,5 +37,6 @@ type IReportStorage interface {
 	Create(item Report) (int64, error)
 	QryByReporter(appkey, reporterId string, startId, limit int64) ([]*Report, error)
 	QryByStatus(appkey string, status int, startId, limit int64) ([]*Report, error)
+	FindByIds(appkey string, ids []int64) ([]*Report, error)
 	UpdateStatus(appkey string, ids []int64, status int, handlerId, result string) (int64, error)
 }
