@@ -524,9 +524,9 @@ POST /jim/users/update
 - 鉴权：登录。
 - Body：实际使用 `user_id`、`nickname`、`avatar`。
 - 昵称会进行敏感词检查。
-- 当前 Service 未校验 `user_id` 是否等于当前用户。
+- **只能改自己**：`user_id` 与登录身份不一致返回 `17018`，不传则按登录身份处理。
 - 返回：`data: null`。
-- 主要错误：`17003`、`17016`。
+- 主要错误：`17003`、`17016`、`17018`。
 
 ```json
 {"user_id":"user_123","nickname":"张三","avatar":"https://example.com/a.png"}
@@ -557,9 +557,9 @@ POST /jim/users/updpass
 
 - 鉴权：登录。
 - Body：`user_id`、`password`、`new_password` 均必填。
-- 当前 Service 未校验 `user_id` 是否等于当前用户。
+- **只能改自己**：`user_id` 与登录身份不一致返回 `17018`。
 - 返回：`data: null`。
-- 主要错误：`17003`、`17012`、`17013`、`17000`。
+- 主要错误：`17003`、`17012`、`17013`、`17000`、`17018`。
 
 ### 8.6 更新用户设置
 
@@ -1394,13 +1394,13 @@ GET /jim/reports/my?limit=20&offset=
 ## 18. 助手回调接口（1 个）
 
 ### 18.1 助手消息回调
-
 ```http
 POST /callback/assistants/msgcallback
 ```
 
-- 服务：独立 callback 端口。
-- 鉴权：回调公开；当前未校验 Header、签名或来源。
+- 服务：独立 callback 端口，**默认只监听 `127.0.0.1`**（配置项 `callbackBindAddr`）。
+- 鉴权：以请求头 `appkey` 为准（引擎实际只在头里带租户），并校验该租户存在；
+  缺 appkey / 缺 sender / body 超过 1MB / JSON 非法都直接拒绝。
 - Body：
 
 ```json

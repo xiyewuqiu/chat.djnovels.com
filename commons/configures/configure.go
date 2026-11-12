@@ -31,7 +31,9 @@ type AppConfig struct {
 
 	ImApiDomain string `yaml:"imApiDomain"`
 
-	CallbackBaseUrl   string `yaml:"callbackBaseUrl"`
+	CallbackBaseUrl string `yaml:"callbackBaseUrl"`
+	// CallbackBindAddr 回调监听地址。留空 = 127.0.0.1（只给同机引擎用）。
+	CallbackBindAddr  string `yaml:"callbackBindAddr"`
 	AiBotCallbackUrl  string `yaml:"aiBotCallbackUrl"`
 	AssistantAgentUrl string `yaml:"assistantAgentUrl"`
 

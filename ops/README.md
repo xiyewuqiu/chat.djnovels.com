@@ -495,6 +495,9 @@ mux.Handle("/jim/", ginEngine)
    由群主/管理员调 `POST /jim/groups/setpublic`，或运维直接写
    `groupinfoexts(item_key='is_public', item_value='1')`。
    功能面与差距清单见 `docs/feature-audit-2026-11.zh-CN.md`。
+10. **回调端口只绑回环**：`callbackPort`（65111）现在默认监听 `127.0.0.1`，
+    与同机引擎通信不受影响；把引擎挪到别的机器上时，必须显式配置
+    `callbackBindAddr` 并自行加防火墙规则，否则助手回调会连不上。
 
 ---
 

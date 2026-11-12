@@ -59,7 +59,13 @@ func main() {
 	if configures.Config.CallbackPort > 0 {
 		callbackServer := gin.Default()
 		routers.CallbackRoute(callbackServer, "callback")
-		go callbackServer.Run(fmt.Sprintf(":%d", configures.Config.CallbackPort))
+		// 回调只服务于同机引擎：默认只绑回环，公网与内网都碰不到。
+		// 引擎与业务层分机部署时，用 callbackBindAddr 显式放开，并自行加防火墙规则。
+		bindAddr := configures.Config.CallbackBindAddr
+		if bindAddr == "" {
+			bindAddr = "127.0.0.1"
+		}
+		go callbackServer.Run(fmt.Sprintf("%s:%d", bindAddr, configures.Config.CallbackPort))
 	}
 
 	closeChan := make(chan struct{})
