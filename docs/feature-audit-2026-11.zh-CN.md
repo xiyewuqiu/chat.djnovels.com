@@ -99,7 +99,7 @@
 ### 4.2 认证限流（P0）
 
 **问题**：登录、`/jim/sms/send`、`/jim/email/send`、验证码校验均无频次限制；短信接口可被用来轰炸他人并消耗短信费。
-**改法**：`commons/ratelimit` 滑动窗口＋`services/securitylimit.go` 策略；账号/目标维度紧（登录 10 次/分、验证码 1 次/分且 5 次/时），IP 维度只做兜底（登录 120 次/分、下发 60 次/时），避免运营商 NAT 误伤。超限返回 `17019` 并带 `Retry-After`。登录成功清空账号窗口。
+**改法**：`commons/ratelimit` 滑动窗口＋`services/securitylimit.go` 策略；账号/目标维度紧（登录 10 次/分、验证码 1 次/分且 5 次/时），IP 维度只做兜底（登录 120 次/分、下发 60 次/时），避免运营商 NAT 误伤。注册按 IP 20 次/时——bcrypt 每次几十毫秒，不设闸门就是廉价的 CPU 打点器。超限返回 `17019` 并带 `Retry-After`。登录成功清空账号窗口。
 **验证**：`commons/ratelimit/ratelimit_test.go`、`services/securitylimit_test.go`、`apis/ratelimit_test.go`。
 
 ### 4.3 找回密码（P1）

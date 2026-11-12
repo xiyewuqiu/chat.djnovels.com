@@ -117,6 +117,15 @@ func Register(ctx *gin.Context) {
 	appkey := ctx.GetString(string(ctxs.CtxKey_AppKey))
 	userId := utils.GenerateUUIDShort11()
 	nickname := fmt.Sprintf("user%05d", utils.RandInt(100000))
+	if ok, retry := services.AllowRegisterAttempt(appkey, ctx.ClientIP()); !ok {
+		rejectRateLimited(ctx, retry)
+		return
+	}
+	// 先做廉价校验再做 bcrypt：格式非法的请求不该消耗一次哈希。
+	if req.Account != "" && !checkAccount(req.Account) {
+		responses.ErrorHttpResp(ctx, errs.IMErrorCode_APP_REQ_BODY_ILLEGAL)
+		return
+	}
 	passHash, err := services.HashPassword(req.Password)
 	if err != nil {
 		responses.ErrorHttpResp(ctx, errs.IMErrorCode_APP_DEFAULT)
@@ -124,11 +133,6 @@ func Register(ctx *gin.Context) {
 	}
 	storage := storages.NewUserStorage()
 	if req.Account != "" {
-		//check account
-		if !checkAccount(req.Account) {
-			responses.ErrorHttpResp(ctx, errs.IMErrorCode_APP_REQ_BODY_ILLEGAL)
-			return
-		}
 		nickname = req.Account
 		err = storage.Create(dbModels.User{
 			UserId:       userId,

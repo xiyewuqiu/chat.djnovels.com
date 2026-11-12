@@ -20,9 +20,12 @@ const (
 	scopeSendHour   = "sendcode-hour"
 	scopeSendCodeIP = "sendcode-ip"
 	scopeReport     = "report"
+	scopeRegister   = "register"
 
 	// 举报没有配置项：正常用户一天举报不了几次，20 次/时足够。
 	defaultReportPerHour = 20
+	// 注册同理：按 IP 每小时 20 次，足够小团队共用出口。
+	defaultRegisterPerHour = 20
 )
 
 // AllowLoginAttempt 判断一次密码登录尝试是否放行。
@@ -96,6 +99,15 @@ func AllowSendVerifyCode(appkey, target, ip string) (bool, time.Duration) {
 		}
 	}
 	return true, 0
+}
+
+// AllowRegisterAttempt 限制注册接口：bcrypt 每次要花几十毫秒，不加闸门就是一个
+// 廉价的 CPU 打点器。按 IP 计，正常用户一天注册不了几次。
+func AllowRegisterAttempt(appkey, ip string) (bool, time.Duration) {
+	return authLimiter.Allow(limitKey(scopeRegister, appkey, ip), ratelimit.Limit{
+		Count:  defaultRegisterPerHour,
+		Window: time.Hour,
+	})
 }
 
 // AllowReportSubmit 限制同一用户的举报提交频率，避免举报箱被刷爆。

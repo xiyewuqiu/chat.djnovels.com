@@ -77,3 +77,20 @@ func TestVerifyAttemptIsCapped(t *testing.T) {
 		t.Fatal("attempt above the cap must be rejected")
 	}
 }
+
+// 注册接口会算一次 bcrypt，必须按 IP 设闸门，否则成了廉价的 CPU 打点器。
+func TestRegisterAttemptIsCappedPerIP(t *testing.T) {
+	appkey := "register-test-app"
+	ip := "10.0.0.9"
+	for i := 0; i < defaultRegisterPerHour; i++ {
+		if ok, _ := AllowRegisterAttempt(appkey, ip); !ok {
+			t.Fatalf("attempt %d should be allowed", i+1)
+		}
+	}
+	if ok, _ := AllowRegisterAttempt(appkey, ip); ok {
+		t.Fatal("attempt above the cap must be rejected")
+	}
+	if ok, _ := AllowRegisterAttempt(appkey, "10.0.0.10"); !ok {
+		t.Fatal("another IP must not inherit the window")
+	}
+}
