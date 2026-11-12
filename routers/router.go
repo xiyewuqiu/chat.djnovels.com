@@ -139,6 +139,9 @@ func Route(eng *gin.Engine, prefix string) *gin.RouterGroup {
 	internalGroup.POST("/users/ban", apis.InternalBanUsers)
 	internalGroup.POST("/users/unban", apis.InternalUnbanUsers)
 	internalGroup.GET("/audits/list", apis.InternalQryAdminAudits)
+	// 平台能力：租户开通与查询。写 apps/appexts，业务层与引擎共用一个库。
+	internalGroup.POST("/apps/create", apis.InternalCreateTenant)
+	internalGroup.GET("/apps/info", apis.InternalGetTenant)
 	return group
 }
 

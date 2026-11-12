@@ -65,6 +65,13 @@ func GetAppInfo(appkey string) (*AppInfo, bool) {
 	}
 }
 
+// InvalidateAppInfoCache 让新建或改过配置的租户立刻生效，不必等缓存自然过期。
+func InvalidateAppInfoCache(appkey string) {
+	if appCache != nil {
+		appCache.Remove(appkey)
+	}
+}
+
 func GetAppLock() *sync.RWMutex {
 	return appLock
 }

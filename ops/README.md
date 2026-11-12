@@ -886,6 +886,8 @@ SELECT COUNT(*) FROM users WHERE app_key='dz.djnovels.com' AND login_account IS 
 | 解封 | `POST /jim/internal/users/unban` | `{"user_ids":["u1"]}` |
 | 全站公告 | `POST /jim/internal/announcements/send` | `{"content":"系统维护通知","operator_id":"ops-a"}`，缺省发送者 `kefu` |
 | 查审计 | `GET /jim/internal/audits/list?action=&limit=20&offset=` | `action` 可填 `report.handle`、`announcement.send`、`user.ban`、`user.unban`；空为全部 |
+| 开通租户 | `POST /jim/internal/apps/create` | `{"app_name":"某书站","retention_days":7}`；`app_key` 留空自动生成，密钥只在响应里出现一次 |
+| 查租户 | `GET /jim/internal/apps/info?app_key=` | 只回名称/类型/状态/保留期，不回密钥 |
 
 统一要求两个头：`X-Service-Key: <serviceKey>` 与 `appkey: <appkey>`；
 **公网 Nginx 必须继续拒绝 `/jim/internal/`**。举报表由迁移

@@ -194,6 +194,19 @@
 **改法**：新表 `admin_audits`（迁移 `20261114.sql`），记录操作人、动作、目标、摘要；举报处理、全站公告、封禁、解封四个动作落审计。新接口 `GET /jim/internal/audits/list` 按动作过滤、游标分页。落库失败只记日志，不阻断业务。
 **验证**：`services/auditservice_test.go`（按 rune 截断、空动作不落库、缺租户拒绝、target 拼接）。
 
+### 4.15 租户开通 API（P2）
+
+**问题**：开通一个新租户要手工写 `apps` 与 `appexts` 两处，密钥靠人肉生成——这正是 `architecture-decision.md` 里"新租户一次调用即可登录"那条验收没做完的部分。
+**改法**：`POST /jim/internal/apps/create` 一次完成：生成/校验 `app_key`、生成 `app_secret` 与 `app_secure_key`、写 `apps`、写默认保留期配置（`his_msg_save_day`、`offline_msg_save_time`、`offline_cmd_msg_save_time`），并让应用缓存立即失效。`GET /jim/internal/apps/info` 只回概览、不回密钥。
+**验证**：`services/tenantservice_test.go`（保留期钳制 1–30、离线分钟换算、名字/`app_key` 校验、空租户拒绝）。
+
+### 4.16 对外 Webhook：引擎已经有，缺的是签名（结论更正）
+
+上一轮把"对外 Webhook 订阅"列为待补，这轮核实后要更正：引擎 `services/commonservices/webhook_engine.go` 已经实现了三类投递——
+`PreSendWebhookUrl`（发送前同步检查/改写，500ms 超时）、`PostSendWebhookUrl`（发送后异步通知，2s）、`EventWebhookUrl`（在线/离线/建群/解散事件）。业务层不需要重复造一份投递链路。
+
+真正的缺口有两个：**（1）调用方无法验证来源**（只有 `X-App-Key` 头，没有 HMAC 签名与时间戳）；**（2）配置入口在引擎管理台 v2**，而那个入口目前无鉴权（见 P0-1）。签名要改引擎，属于被 WIP 卡住的部分。
+
 ---
 
 ## 5. 待办清单
@@ -212,9 +225,9 @@
 3. 消息搜索：引擎加 `/hismsgs/search`＋内容索引，客户端加搜索页。
 
 **P2（平台化）**
-4. 对外 Webhook 订阅（引擎已有 webhook_engine，业务层缺投递与签名）。
-5. 租户开通 API（建 app＋下发保留期配置）。
-6. 附件配额与对象存储生命周期（与 7 天保留契约配套）。
+4. Webhook 签名（投递链路引擎已有，缺 HMAC 签名与时间戳；改动落在引擎，受 WIP 阻塞）。
+5. 附件配额与对象存储生命周期（与 7 天保留契约配套）。
+6. 租户停用/删除与密钥轮换（当前只有开通与查询）。
 
 ---
 
