@@ -42,6 +42,23 @@ type AppConfig struct {
 	// ServiceKey 服务端到服务端调用的共享密钥（/jim/internal/*）。
 	// 只走私网 + 该密钥鉴权；留空表示未开通内部接口，相关路由直接拒绝。
 	ServiceKey string `yaml:"serviceKey"`
+
+	// Security 认证与验证码防刷配置。时间窗内的次数为 0 时使用内置默认值。
+	Security SecurityConfig `yaml:"security"`
+}
+
+// SecurityConfig 控制登录、验证码下发与验证码校验的频次上限。
+type SecurityConfig struct {
+	// AllowFixedVerifyCode 允许固定验证码 000000 通过手机号/邮箱校验。
+	// 这是上游遗留的测试开关，生产必须为 false，否则任何人可冒充任意手机号。
+	AllowFixedVerifyCode bool `yaml:"allow_fixed_verify_code"`
+
+	LoginPerMinute       int `yaml:"login_per_minute"`
+	LoginPerMinutePerIP  int `yaml:"login_per_minute_per_ip"`
+	VerifyPerMinute      int `yaml:"verify_per_minute"`
+	SendCodePerMinute    int `yaml:"send_code_per_minute"`
+	SendCodePerHour      int `yaml:"send_code_per_hour"`
+	SendCodePerHourPerIP int `yaml:"send_code_per_hour_per_ip"`
 }
 
 var Config AppConfig
@@ -52,6 +69,62 @@ func (c AppConfig) DeviceKickEnabled() bool {
 		return *c.DeviceIMKickEnabled
 	}
 	return c.DeviceIMBanEnabled
+}
+
+// RateLimits 返回生效的频次上限：显式配置优先，零值回落默认。
+func (c AppConfig) RateLimits() RateLimits {
+	rl := RateLimits{
+		LoginPerMinute:       c.Security.LoginPerMinute,
+		LoginPerMinutePerIP:  c.Security.LoginPerMinutePerIP,
+		VerifyPerMinute:      c.Security.VerifyPerMinute,
+		SendCodePerMinute:    c.Security.SendCodePerMinute,
+		SendCodePerHour:      c.Security.SendCodePerHour,
+		SendCodePerHourPerIP: c.Security.SendCodePerHourPerIP,
+	}
+	return rl.withDefaults()
+}
+
+// RateLimits 是 SecurityConfig 的生效值，便于测试与调用方使用同一份默认值。
+type RateLimits struct {
+	LoginPerMinute       int
+	LoginPerMinutePerIP  int
+	VerifyPerMinute      int
+	SendCodePerMinute    int
+	SendCodePerHour      int
+	SendCodePerHourPerIP int
+}
+
+const (
+	DefaultLoginPerMinute = 10
+	// IP 维度的上限只是兜底：运营商 NAT 后面可能有大量真实用户，
+	// 定得太紧会把正常读者挡在门外，账号/验证码维度才是主要闸门。
+	DefaultLoginPerMinutePerIP  = 120
+	DefaultVerifyPerMinute      = 10
+	DefaultSendCodePerMinute    = 1
+	DefaultSendCodePerHour      = 5
+	DefaultSendCodePerHourPerIP = 60
+)
+
+func (r RateLimits) withDefaults() RateLimits {
+	if r.LoginPerMinute <= 0 {
+		r.LoginPerMinute = DefaultLoginPerMinute
+	}
+	if r.LoginPerMinutePerIP <= 0 {
+		r.LoginPerMinutePerIP = DefaultLoginPerMinutePerIP
+	}
+	if r.VerifyPerMinute <= 0 {
+		r.VerifyPerMinute = DefaultVerifyPerMinute
+	}
+	if r.SendCodePerMinute <= 0 {
+		r.SendCodePerMinute = DefaultSendCodePerMinute
+	}
+	if r.SendCodePerHour <= 0 {
+		r.SendCodePerHour = DefaultSendCodePerHour
+	}
+	if r.SendCodePerHourPerIP <= 0 {
+		r.SendCodePerHourPerIP = DefaultSendCodePerHourPerIP
+	}
+	return r
 }
 
 const (

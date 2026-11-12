@@ -38,3 +38,15 @@ commercial: false
 # 业务后端用它换 IM 凭据；留空等于关闭内部接口（默认拒绝）。
 # 生成：openssl rand -base64 32。公网 Nginx 必须拒绝 /jim/internal/ 前缀。
 serviceKey: __SERVICE_KEY__
+
+# 认证与验证码防刷。留空即使用代码内置默认值，通常不需要改。
+security:
+  # 固定测试验证码 000000。生产必须保持 false：
+  # 打开它等于允许任何人用任意手机号/邮箱登录。
+  allow_fixed_verify_code: false
+  # login_per_minute: 10            同一账号每分钟密码登录尝试上限
+  # login_per_minute_per_ip: 120    同一 IP 每分钟登录尝试上限（兜底，防 NAT 误伤放宽）
+  # verify_per_minute: 10           同一手机号/邮箱每分钟验证码校验上限
+  # send_code_per_minute: 1         同一手机号/邮箱每分钟验证码下发上限
+  # send_code_per_hour: 5           同一手机号/邮箱每小时验证码下发上限
+  # send_code_per_hour_per_ip: 60   同一 IP 每小时验证码下发上限

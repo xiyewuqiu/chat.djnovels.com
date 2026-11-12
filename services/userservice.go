@@ -512,16 +512,8 @@ func BindEmailSendEmail(ctx context.Context, req *apimodels.BindEmailReq) errs.I
 func BindEmail(ctx context.Context, req *apimodels.BindEmailReq) errs.IMErrorCode {
 	appkey := ctxs.GetAppKeyFromCtx(ctx)
 	userId := ctxs.GetRequesterIdFromCtx(ctx)
-	if req.Code != "000000" {
-		storage := storages.NewSmsRecordStorage()
-		record, err := storage.FindByEmailCode(appkey, req.Email, req.Code)
-		if err != nil {
-			return errs.IMErrorCode_APP_SMS_CODE_EXPIRED
-		}
-		interval := time.Since(record.CreatedTime)
-		if interval > 5*time.Minute {
-			return errs.IMErrorCode_APP_SMS_CODE_EXPIRED
-		}
+	if code := VerifyEmailCode(ctx, req.Email, req.Code); code != errs.IMErrorCode_SUCCESS {
+		return code
 	}
 	//update email
 	userStorage := storages.NewUserStorage()
@@ -575,16 +567,8 @@ func BindPhoneSendSms(ctx context.Context, req *apimodels.BindPhoneReq) errs.IME
 func BindPhone(ctx context.Context, req *apimodels.BindPhoneReq) errs.IMErrorCode {
 	appkey := ctxs.GetAppKeyFromCtx(ctx)
 	userId := ctxs.GetRequesterIdFromCtx(ctx)
-	if req.Code != "000000" {
-		storage := storages.NewSmsRecordStorage()
-		record, err := storage.FindByPhoneCode(appkey, req.Phone, req.Code)
-		if err != nil {
-			return errs.IMErrorCode_APP_SMS_CODE_EXPIRED
-		}
-		interval := time.Since(record.CreatedTime)
-		if interval > 5*time.Minute {
-			return errs.IMErrorCode_APP_SMS_CODE_EXPIRED
-		}
+	if code := VerifyPhoneCode(ctx, req.Phone, req.Code); code != errs.IMErrorCode_SUCCESS {
+		return code
 	}
 	//update phone
 	userStorage := storages.NewUserStorage()

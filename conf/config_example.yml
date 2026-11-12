@@ -18,3 +18,8 @@ botConnector:
   domain: <bot-connector url>
 
 commercial: false
+
+# 认证与验证码防刷；零值/缺省时使用内置默认值。
+security:
+  # 固定测试验证码 000000，生产必须为 false。
+  allow_fixed_verify_code: false

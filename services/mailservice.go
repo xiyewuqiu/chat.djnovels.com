@@ -80,20 +80,7 @@ func MailSend(ctx context.Context, mailAddress string) errs.IMErrorCode {
 }
 
 func CheckEmailCode(ctx context.Context, mail, code string) errs.IMErrorCode {
-	if code == "000000" {
-		return errs.IMErrorCode_SUCCESS
-	}
-	appkey := ctxs.GetAppKeyFromCtx(ctx)
-	storage := storages.NewSmsRecordStorage()
-	record, err := storage.FindByEmailCode(appkey, mail, code)
-	if err != nil {
-		return errs.IMErrorCode_APP_SMS_CODE_EXPIRED
-	}
-	interval := time.Since(record.CreatedTime)
-	if interval > 5*time.Minute {
-		return errs.IMErrorCode_APP_SMS_CODE_EXPIRED
-	}
-	return errs.IMErrorCode_SUCCESS
+	return VerifyEmailCode(ctx, mail, code)
 }
 
 func GetMailEngine(appkey string) emailengines.IEmailEngine {

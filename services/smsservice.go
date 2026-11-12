@@ -62,20 +62,7 @@ func SmsSend(ctx context.Context, phone string) errs.IMErrorCode {
 }
 
 func CheckPhoneSmsCode(ctx context.Context, phone, code string) errs.IMErrorCode {
-	if code == "000000" {
-		return errs.IMErrorCode_SUCCESS
-	}
-	appkey := ctxs.GetAppKeyFromCtx(ctx)
-	storage := storages.NewSmsRecordStorage()
-	record, err := storage.FindByPhoneCode(appkey, phone, code)
-	if err != nil {
-		return errs.IMErrorCode_APP_SMS_CODE_EXPIRED
-	}
-	interval := time.Since(record.CreatedTime)
-	if interval > 5*time.Minute {
-		return errs.IMErrorCode_APP_SMS_CODE_EXPIRED
-	}
-	return errs.IMErrorCode_SUCCESS
+	return VerifyPhoneCode(ctx, phone, code)
 }
 
 func GetSmsEngine(appkey string) smsengines.ISmsEngine {
