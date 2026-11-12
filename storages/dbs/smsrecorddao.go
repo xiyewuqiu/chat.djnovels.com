@@ -87,3 +87,17 @@ func (sms SmsRecordDao) FindByEmail(appkey, email string, startTime time.Time) (
 		AppKey:      item.AppKey,
 	}, nil
 }
+
+// DeleteByPhoneCode 作废一条手机验证码（一次性消费）。
+func (sms SmsRecordDao) DeleteByPhoneCode(appkey, phone, code string) error {
+	return dbcommons.GetDb().
+		Where("app_key=? AND phone=? AND code=?", appkey, phone, code).
+		Delete(&SmsRecordDao{}).Error
+}
+
+// DeleteByEmailCode 作废一条邮箱验证码（一次性消费）。
+func (sms SmsRecordDao) DeleteByEmailCode(appkey, email, code string) error {
+	return dbcommons.GetDb().
+		Where("app_key=? AND email=? AND code=?", appkey, email, code).
+		Delete(&SmsRecordDao{}).Error
+}

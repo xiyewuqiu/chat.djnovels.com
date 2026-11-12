@@ -78,5 +78,11 @@ func ResetPass(ctx context.Context, req *apimodels.ResetPassReq) errs.IMErrorCod
 	if err := storage.UpdatePass(appkey, user.UserId, hashed); err != nil {
 		return errs.IMErrorCode_APP_DEFAULT
 	}
+	// 重置成功后立刻作废这串验证码：同一串码在有效期内不该能重置第二次。
+	if req.Phone != "" {
+		ConsumePhoneCode(ctx, req.Phone, req.Code)
+	} else {
+		ConsumeEmailCode(ctx, req.Email, req.Code)
+	}
 	return errs.IMErrorCode_SUCCESS
 }

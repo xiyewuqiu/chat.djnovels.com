@@ -538,6 +538,7 @@ func BindEmail(ctx context.Context, req *apimodels.BindEmailReq) errs.IMErrorCod
 	if err != nil {
 		return errs.IMErrorCode_APP_DEFAULT
 	}
+	ConsumeEmailCode(ctx, req.Email, req.Code)
 	return errs.IMErrorCode_SUCCESS
 }
 
@@ -593,5 +594,6 @@ func BindPhone(ctx context.Context, req *apimodels.BindPhoneReq) errs.IMErrorCod
 	if err != nil {
 		return errs.IMErrorCode_APP_DEFAULT
 	}
+	ConsumePhoneCode(ctx, req.Phone, req.Code)
 	return errs.IMErrorCode_SUCCESS
 }

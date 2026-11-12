@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/juggleim/jugglechat-server/commons/configures"
@@ -42,6 +43,32 @@ func VerifyPhoneCode(ctx context.Context, phone, code string) errs.IMErrorCode {
 		return errs.IMErrorCode_APP_SMS_CODE_EXPIRED
 	}
 	return errs.IMErrorCode_SUCCESS
+}
+
+// ConsumePhoneCode 作废已经用过的手机验证码。
+//
+// 只给敏感操作（重置密码、绑定手机）用：这些操作成功后同一串码再出现一次
+// 就应该被拒绝。登录链路刻意保持"窗口内可重复校验"，否则客户端一次重试
+// 就会撞上 17009，用户看到报错但其实已经登录成功。
+func ConsumePhoneCode(ctx context.Context, phone, code string) {
+	if phone == "" || code == "" || code == fixedVerifyCode {
+		return
+	}
+	storage := storages.NewSmsRecordStorage()
+	if err := storage.DeleteByPhoneCode(ctxs.GetAppKeyFromCtx(ctx), phone, code); err != nil {
+		fmt.Println("[verifycode] consume phone code failed:", err)
+	}
+}
+
+// ConsumeEmailCode 作废已经用过的邮箱验证码，语义同 ConsumePhoneCode。
+func ConsumeEmailCode(ctx context.Context, email, code string) {
+	if email == "" || code == "" || code == fixedVerifyCode {
+		return
+	}
+	storage := storages.NewSmsRecordStorage()
+	if err := storage.DeleteByEmailCode(ctxs.GetAppKeyFromCtx(ctx), email, code); err != nil {
+		fmt.Println("[verifycode] consume email code failed:", err)
+	}
 }
 
 // VerifyEmailCode 校验邮箱验证码，规则与手机号一致。
