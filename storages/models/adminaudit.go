@@ -10,6 +10,8 @@ const (
 	AdminAuditAction_UserUnban     = "user.unban"
 	AdminAuditAction_GroupMember   = "group.member.add"
 	AdminAuditAction_InternalToken = "internal.token"
+	AdminAuditAction_AppStatus     = "app.status"
+	AdminAuditAction_AppRotate     = "app.rotate"
 )
 
 type AdminAudit struct {

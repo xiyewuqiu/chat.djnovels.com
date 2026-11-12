@@ -142,6 +142,8 @@ func Route(eng *gin.Engine, prefix string) *gin.RouterGroup {
 	// 平台能力：租户开通与查询。写 apps/appexts，业务层与引擎共用一个库。
 	internalGroup.POST("/apps/create", apis.InternalCreateTenant)
 	internalGroup.GET("/apps/info", apis.InternalGetTenant)
+	internalGroup.POST("/apps/status", apis.InternalUpdateTenantStatus)
+	internalGroup.POST("/apps/rotate", apis.InternalRotateTenantKeys)
 	return group
 }
 

@@ -12,6 +12,7 @@ import (
 	"github.com/juggleim/jugglechat-server/commons/errs"
 	utils "github.com/juggleim/jugglechat-server/commons/tools"
 	"github.com/juggleim/jugglechat-server/storages/dbs"
+	dbmodels "github.com/juggleim/jugglechat-server/storages/models"
 )
 
 const (
@@ -143,4 +144,99 @@ func tenantExtValues(days int) map[string]string {
 		"offline_msg_save_time":     strconv.Itoa(minutes),
 		"offline_cmd_msg_save_time": strconv.Itoa(minutes),
 	}
+}
+
+// UpdateTenantStatus 启用/停用租户。引擎在 GetAppInfo 里直接拒绝 app_status != 0 的应用，
+// 所以停用是真停；但引擎侧有 5 分钟缓存，最晚 5 分钟后全量生效。
+func UpdateTenantStatus(ctx context.Context, req *apimodels.UpdateTenantStatusReq) errs.IMErrorCode {
+	appkey := strings.TrimSpace(req.AppKey)
+	if appkey == "" {
+		return errs.IMErrorCode_APP_APPKEY_REQUIRED
+	}
+	if !validTenantStatus(req.AppStatus) {
+		return errs.IMErrorCode_APP_REQ_BODY_ILLEGAL
+	}
+	storage := dbs.AppInfoDao{}
+	app, err := storage.FindByAppkey(appkey)
+	if err != nil || app == nil {
+		return errs.IMErrorCode_APP_NOT_EXISTED
+	}
+	if err := storage.UpdateStatus(appkey, req.AppStatus); err != nil {
+		return errs.IMErrorCode_APP_DEFAULT
+	}
+	appinfos.InvalidateAppInfoCache(appkey)
+	RecordAdminAudit(ctx, req.OperatorId, dbmodels.AdminAuditAction_AppStatus, appkey, tenantStatusText(req.AppStatus))
+	return errs.IMErrorCode_SUCCESS
+}
+
+// RotateTenantKeys 轮换密钥。
+// 轮换 app_secure_key 会让该租户所有已签发的用户令牌失效（令牌用这把钥匙加密），
+// 所有人必须重新登录；这是有意为之的安全动作，调用方要自己判断窗口。
+func RotateTenantKeys(ctx context.Context, req *apimodels.RotateTenantKeysReq) (errs.IMErrorCode, *apimodels.RotateTenantKeysResp) {
+	appkey := strings.TrimSpace(req.AppKey)
+	if appkey == "" {
+		return errs.IMErrorCode_APP_APPKEY_REQUIRED, nil
+	}
+	scope, ok := normalizeRotateScope(req.Scope)
+	if !ok {
+		return errs.IMErrorCode_APP_REQ_BODY_ILLEGAL, nil
+	}
+	storage := dbs.AppInfoDao{}
+	app, err := storage.FindByAppkey(appkey)
+	if err != nil || app == nil {
+		return errs.IMErrorCode_APP_NOT_EXISTED, nil
+	}
+
+	resp := &apimodels.RotateTenantKeysResp{AppKey: appkey}
+	appSecret, appSecureKey := "", ""
+	if scope == rotateScopeSecret || scope == rotateScopeBoth {
+		appSecret = utils.RandStr(tenantSecretLength)
+		resp.AppSecret = appSecret
+	}
+	if scope == rotateScopeSecureKey || scope == rotateScopeBoth {
+		appSecureKey = utils.RandStr(tenantSecretLength)
+		resp.AppSecureKey = appSecureKey
+	}
+	if err := storage.UpdateKeys(appkey, appSecret, appSecureKey); err != nil {
+		return errs.IMErrorCode_APP_DEFAULT, nil
+	}
+	appinfos.InvalidateAppInfoCache(appkey)
+	RecordAdminAudit(ctx, req.OperatorId, dbmodels.AdminAuditAction_AppRotate, appkey, scope)
+	return errs.IMErrorCode_SUCCESS, resp
+}
+
+const (
+	rotateScopeSecret    = "secret"
+	rotateScopeSecureKey = "secure_key"
+	rotateScopeBoth      = "both"
+)
+
+// normalizeRotateScope 空值默认只换 app_secret（影响面最小）。
+func normalizeRotateScope(scope string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(scope)) {
+	case "", rotateScopeSecret:
+		return rotateScopeSecret, true
+	case rotateScopeSecureKey:
+		return rotateScopeSecureKey, true
+	case rotateScopeBoth:
+		return rotateScopeBoth, true
+	}
+	return "", false
+}
+
+// validTenantStatus 只认 0 正常 / 1 封禁 / 2 过期，与引擎 AppStatus 常量一致。
+func validTenantStatus(status int) bool {
+	return status >= int(dbs.AppStatus_Normal) && status <= int(dbs.AppStatus_Expire)
+}
+
+func tenantStatusText(status int) string {
+	switch dbs.AppStatus(status) {
+	case dbs.AppStatus_Normal:
+		return "正常"
+	case dbs.AppStatus_Block:
+		return "封禁"
+	case dbs.AppStatus_Expire:
+		return "过期"
+	}
+	return "未知"
 }

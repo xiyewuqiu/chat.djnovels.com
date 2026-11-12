@@ -55,8 +55,7 @@ func (app AppInfoDao) Upsert(item AppInfoDao) error {
 	return dbcommons.GetDb().Exec(sql, item.AppName, item.AppKey, item.AppSecret, item.AppSecureKey, item.AppType).Error
 }
 
-func (app AppInfoDao) FindByAppkey(appkey string) (*AppInfoDao, error) {
-	var appItem AppInfoDao
+func (app AppInfoDao) FindByAppkey(appkey string) (*AppInfoDao, error) {	var appItem AppInfoDao
 	err := dbcommons.GetDb().Where("app_key=?", appkey).Take(&appItem).Error
 	if err != nil {
 		return nil, err
@@ -72,4 +71,26 @@ func (app AppInfoDao) FindByAppkey(appkey string) (*AppInfoDao, error) {
 		CreatedTime:  appItem.CreatedTime,
 		UpdatedTime:  appItem.UpdatedTime,
 	}, nil
+}
+
+// UpdateStatus 启用/停用租户。引擎在 GetAppInfo 里直接拒绝 app_status != 0 的应用。
+func (app AppInfoDao) UpdateStatus(appkey string, status int) error {
+	return dbcommons.GetDb().Model(&AppInfoDao{}).
+		Where("app_key=?", appkey).
+		Update("app_status", status).Error
+}
+
+// UpdateKeys 轮换密钥：只更新非空字段，避免一次手滑把两把钥匙都清空。
+func (app AppInfoDao) UpdateKeys(appkey, appSecret, appSecureKey string) error {
+	updates := map[string]interface{}{}
+	if appSecret != "" {
+		updates["app_secret"] = appSecret
+	}
+	if appSecureKey != "" {
+		updates["app_secure_key"] = appSecureKey
+	}
+	if len(updates) == 0 {
+		return nil
+	}
+	return dbcommons.GetDb().Model(&AppInfoDao{}).Where("app_key=?", appkey).Updates(updates).Error
 }

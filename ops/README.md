@@ -888,6 +888,8 @@ SELECT COUNT(*) FROM users WHERE app_key='dz.djnovels.com' AND login_account IS 
 | 查审计 | `GET /jim/internal/audits/list?action=&limit=20&offset=` | `action` 可填 `report.handle`、`announcement.send`、`user.ban`、`user.unban`；空为全部 |
 | 开通租户 | `POST /jim/internal/apps/create` | `{"app_name":"某书站","retention_days":7}`；`app_key` 留空自动生成，密钥只在响应里出现一次 |
 | 查租户 | `GET /jim/internal/apps/info?app_key=` | 只回名称/类型/状态/保留期，不回密钥 |
+| 停用租户 | `POST /jim/internal/apps/status` | `{"app_key":"k","app_status":1,"operator_id":"ops-a"}`；引擎侧最多 5 分钟生效 |
+| 轮换密钥 | `POST /jim/internal/apps/rotate` | `{"app_key":"k","scope":"secret"}`；`scope=secure_key` 会让该租户全部用户令牌立刻失效 |
 
 统一要求两个头：`X-Service-Key: <serviceKey>` 与 `appkey: <appkey>`；
 **公网 Nginx 必须继续拒绝 `/jim/internal/`**。举报表由迁移

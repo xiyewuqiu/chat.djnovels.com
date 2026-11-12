@@ -4,7 +4,7 @@
 
 - 主业务接口：92 个，统一使用 `/jim` 前缀。
 - 助手回调接口：1 个，使用独立的 `/callback` 前缀和端口。
-- 合计：93 个 `method + path` 接口；另有 10 个内部接口（`/jim/internal/*`，服务密钥鉴权，不计入上述统计）。
+- 合计：93 个 `method + path` 接口；另有 12 个内部接口（`/jim/internal/*`，服务密钥鉴权，不计入上述统计）。
 - 文档反映当前代码行为；代码中没有显式实现的校验、权限或数据清理能力，不应视为接口保证。
 
 ## 1. 服务地址
@@ -1532,5 +1532,7 @@ POST /callback/assistants/msgcallback
 | `GET /jim/internal/audits/list` | 管理操作审计 | Query：`action`（空=全部）、`limit`（默认 20，上限 100）、`offset` |
 | `POST /jim/internal/apps/create` | 开通租户 | `app_name`、`app_key`（可空，自动生成）、`app_type`、`retention_days`（1–30，缺省 7） |
 | `GET /jim/internal/apps/info` | 租户概览 | Query：`app_key`；不返回任何密钥 |
+| `POST /jim/internal/apps/status` | 启用/停用租户 | `app_key`、`app_status`（0 正常 / 1 封禁 / 2 过期）、`operator_id` |
+| `POST /jim/internal/apps/rotate` | 轮换密钥 | `app_key`、`scope`（secret / secure_key / both，缺省 secret）、`operator_id` |
 
 失败语义与普通接口一致：HTTP 200 + 业务码；未配置 `serviceKey` 时一律 `17005`。
