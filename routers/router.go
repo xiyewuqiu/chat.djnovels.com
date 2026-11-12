@@ -47,6 +47,7 @@ func Route(eng *gin.Engine, prefix string) *gin.RouterGroup {
 	group.POST("/users/search", apis.SearchUsers)
 	group.GET("/users/info", apis.QryUserInfo)
 	group.GET("/users/qrcode", apis.QryUserQrCode)
+	group.GET("/users/export", apis.ExportUserData)
 	group.POST("/users/setaccount", apis.SetLoginAccount)
 	group.POST("/users/blockusers/add", apis.BlockUsers)
 	group.POST("/users/blockusers/del", apis.UnBlockUsers)

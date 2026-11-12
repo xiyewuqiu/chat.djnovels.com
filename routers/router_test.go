@@ -24,6 +24,7 @@ func TestFeatureRoutesAreRegistered(t *testing.T) {
 		"POST /jim/groups/setpublic",
 		"POST /jim/reports/add",
 		"GET /jim/reports/my",
+		"GET /jim/users/export",
 		"GET /jim/internal/reports/list",
 		"POST /jim/internal/reports/handle",
 		"POST /jim/internal/announcements/send",

@@ -2,9 +2,9 @@
 
 本文档根据当前仓库的路由、Handler、请求模型和 Service 实现整理，覆盖所有已注册的 HTTP 业务接口。
 
-- 主业务接口：91 个，统一使用 `/jim` 前缀。
+- 主业务接口：92 个，统一使用 `/jim` 前缀。
 - 助手回调接口：1 个，使用独立的 `/callback` 前缀和端口。
-- 合计：92 个 `method + path` 接口；另有 7 个内部接口（`/jim/internal/*`，服务密钥鉴权，不计入上述统计）。
+- 合计：93 个 `method + path` 接口；另有 7 个内部接口（`/jim/internal/*`，服务密钥鉴权，不计入上述统计）。
 - 文档反映当前代码行为；代码中没有显式实现的校验、权限或数据清理能力，不应视为接口保证。
 
 ## 1. 服务地址
@@ -486,7 +486,7 @@ GET /jim/syncconfs
 - 无参数。
 - 当前固定返回空对象 `{}`。
 
-## 8. 用户接口（16 个）
+## 8. 用户接口（17 个）
 
 ### 8.1 查询用户信息
 
@@ -690,6 +690,33 @@ POST /jim/users/onlinestatus
 - Body：非空数组 `user_ids`。
 - 返回：JuggleIM SDK 的在线状态响应。
 - 主要错误：`17003`、`17002`、`17004` 及 SDK 错误码。
+
+### 8.17 导出我的数据
+
+```http
+GET /jim/users/export
+```
+
+- 鉴权：登录。
+- 无参数，一次返回当前账号的业务数据：资料、设置、好友（≤1000）、我的群（≤500）、黑名单（≤500）、我提交的举报（≤200）。
+- 超过上限的类别会在 `truncated` 里标 `true`，不会静默截断。
+- `notes` 说明导出边界：**聊天消息不在其中**（引擎按保留期保存，客户端本地库是权威副本）。
+- 返回：`UserExport`。
+- 主要错误：`17005`、`17012`。
+
+```json
+{
+  "exported_at": 1762900000000,
+  "user_id": "u1",
+  "profile": {"user_id":"u1","nickname":"读者"},
+  "settings": {"language":"zh"},
+  "friends": [],
+  "groups": [],
+  "blocked_users": [],
+  "reports": [],
+  "notes": ["聊天消息不在本文件内：……"]
+}
+```
 
 ## 9. Telegram Bot 接口（4 个）
 
@@ -1435,7 +1462,7 @@ POST /callback/assistants/msgcallback
 | 服务发现 | 3 |
 | 登录与注册 | 12 |
 | 文件、翻译和同步 | 3 |
-| 用户 | 16 |
+| 用户 | 17 |
 | Telegram Bot | 4 |
 | 群组基本操作 | 19 |
 | 群申请与邀请 | 8 |
@@ -1447,7 +1474,7 @@ POST /callback/assistants/msgcallback
 | 反馈 | 1 |
 | 举报 | 2 |
 | 助手回调 | 1 |
-| **总计** | **92** |
+| **总计** | **93** |
 
 ## 20. 兼容路径
 
@@ -1469,7 +1496,7 @@ POST /callback/assistants/msgcallback
 8. 分页接口混用了 `page/size`、`offset/count`、`offset/limit` 和 `start/count/order`，调用时应以各接口说明为准。
 9. 仓库中还存在未注册的 `QryFriends`、`AddFriend` Handler，它们不属于当前可调用 API。
 10. 登录、注册、验证码下发、验证码校验均有限流（见 `security` 配置），超限返回 `17019` 并带 `Retry-After`。注册按 IP 20 次/时固定，不开放配置。限流窗口在进程内存里，多进程部署会各算各的。
-11. 静态 Web 的 `GET /`、`HEAD /` 和 SPA fallback 不计入本文 91 个业务接口。
+11. 静态 Web 的 `GET /`、`HEAD /` 和 SPA fallback 不计入本文 92 个业务接口。
 12. 密码摘要为 `bcrypt$<hash>`；历史 SHA1 摘要仍可登录，并在登录成功后就地升级。
     该字段需要 `varchar(255)`（迁移 `20261113.sql`），旧库的 `varchar(50)` 装不下 bcrypt。
 
