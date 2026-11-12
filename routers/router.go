@@ -120,6 +120,10 @@ func Route(eng *gin.Engine, prefix string) *gin.RouterGroup {
 	//feedback
 	group.POST("/feedbacks/add", apis.AddFeedback)
 
+	// 举报：用户提交 / 我的记录（登录态）
+	group.POST("/reports/add", apis.AddReport)
+	group.GET("/reports/my", apis.QryMyReports)
+
 	// 内部接口：只给业务后端用（服务端到服务端换 IM 凭据）。
 	// 不挂 apis.Validate（那套要用户 token），改由服务密钥鉴权；
 	// 公网 Nginx 必须拒绝 /jim/internal/ 前缀，只允许私网访问。
@@ -127,6 +131,12 @@ func Route(eng *gin.Engine, prefix string) *gin.RouterGroup {
 	internalGroup.Use(apis.ServiceAuth)
 	internalGroup.POST("/token", apis.InternalToken)
 	internalGroup.POST("/group-member", apis.InternalAddGroupMember)
+	// 运营闭环：举报处理、全站公告、封禁解封。全部走服务密钥，公网不得放行。
+	internalGroup.GET("/reports/list", apis.InternalQryReports)
+	internalGroup.POST("/reports/handle", apis.InternalHandleReports)
+	internalGroup.POST("/announcements/send", apis.InternalSendAnnouncement)
+	internalGroup.POST("/users/ban", apis.InternalBanUsers)
+	internalGroup.POST("/users/unban", apis.InternalUnbanUsers)
 	return group
 }
 

@@ -359,3 +359,22 @@ CREATE TABLE IF NOT EXISTS `sensitivewords` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 INSERT IGNORE INTO `globalconfs` (`conf_key`,`conf_value`)VALUES('jchatdb_version','20251215');
+CREATE TABLE IF NOT EXISTS `reports` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `app_key` varchar(64) COLLATE utf8mb4_bin NOT NULL,
+  `reporter_id` varchar(64) COLLATE utf8mb4_bin NOT NULL,
+  `target_type` tinyint NOT NULL DEFAULT '1',
+  `target_id` varchar(64) COLLATE utf8mb4_bin NOT NULL DEFAULT '',
+  `target_owner_id` varchar(64) COLLATE utf8mb4_bin NOT NULL DEFAULT '',
+  `msg_id` varchar(64) COLLATE utf8mb4_bin NOT NULL DEFAULT '',
+  `reason_type` tinyint NOT NULL DEFAULT '0',
+  `description` varchar(500) NOT NULL DEFAULT '',
+  `status` tinyint NOT NULL DEFAULT '0',
+  `handler_id` varchar(64) COLLATE utf8mb4_bin NOT NULL DEFAULT '',
+  `handle_result` varchar(500) NOT NULL DEFAULT '',
+  `created_time` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  `updated_time` datetime(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (`id`),
+  KEY `idx_report_status` (`app_key`,`status`,`id`),
+  KEY `idx_report_reporter` (`app_key`,`reporter_id`,`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

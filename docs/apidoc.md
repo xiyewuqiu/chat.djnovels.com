@@ -2,9 +2,9 @@
 
 本文档根据当前仓库的路由、Handler、请求模型和 Service 实现整理，覆盖所有已注册的 HTTP 业务接口。
 
-- 主业务接口：89 个，统一使用 `/jim` 前缀。
+- 主业务接口：91 个，统一使用 `/jim` 前缀。
 - 助手回调接口：1 个，使用独立的 `/callback` 前缀和端口。
-- 合计：90 个 `method + path` 接口。
+- 合计：92 个 `method + path` 接口；另有 7 个内部接口（`/jim/internal/*`，服务密钥鉴权，不计入上述统计）。
 - 文档反映当前代码行为；代码中没有显式实现的校验、权限或数据清理能力，不应视为接口保证。
 
 ## 1. 服务地址
@@ -1340,7 +1340,7 @@ GET /jim/applications/list?page=1&size=20&order=0
 - 应用项字段：`app_id`、`app_name`、`app_icon`、`app_desc`、`app_url`、`app_order`、`created_time`、`updated_time`。
 - 当前数据库错误会返回数值 `1014`。
 
-## 17. 反馈接口（1 个）
+## 17. 举报与反馈接口（3 个）
 
 ### 17.1 新增反馈
 
@@ -1362,6 +1362,34 @@ POST /jim/feedbacks/add
   "videos":[]
 }
 ```
+
+### 17.2 提交举报
+
+```http
+POST /jim/reports/add
+```
+
+- 鉴权：登录。
+- Body：`target_type`（1 用户 / 2 群 / 3 消息）、`target_id`、`reason_type`（1–5）、`description`（≤200 字）、`msg_id`（消息举报必填）、`target_owner_id`（可选，被举报内容所属用户）。
+- 只登记事实，不执行封禁或撤回；处置由运营在内部接口完成。
+- 同一用户每小时最多 20 次，超限返回 `17019`。
+- 返回：`{"report_id":123}`。
+- 主要错误：`17003`、`17005`、`17019`。
+
+```json
+{"target_type":3,"target_id":"group_123","msg_id":"msg_abc","target_owner_id":"u_2","reason_type":1,"description":"广告刷屏"}
+```
+
+### 17.3 我提交的举报
+
+```http
+GET /jim/reports/my?limit=20&offset=
+```
+
+- 鉴权：登录。
+- Query：`limit`（默认 20，上限 50）、`offset`（上一页返回的游标）。
+- 返回：`{"items":[...],"offset":"<游标>"}`，`status` 0 待处理 / 1 已处理 / 2 已驳回。
+- 主要错误：`17005`。
 
 ## 18. 助手回调接口（1 个）
 
@@ -1417,8 +1445,9 @@ POST /callback/assistants/msgcallback
 | 会话配置 | 2 |
 | 应用 | 1 |
 | 反馈 | 1 |
+| 举报 | 2 |
 | 助手回调 | 1 |
-| **总计** | **90** |
+| **总计** | **92** |
 
 ## 20. 兼容路径
 
@@ -1454,3 +1483,20 @@ POST /callback/assistants/msgcallback
 | 统一响应 | `commons/responses/response.go` |
 | 错误码 | `commons/errs/errorcode.go` |
 | 业务实现 | `services/*.go` |
+
+## 23. 内部接口（服务密钥，不计入上方统计）
+
+全部挂在 `/jim/internal/*`，鉴权用 `X-Service-Key`（配置项 `serviceKey`，留空即关闭），
+并需带 `appkey` 头指定租户。**公网 Nginx 必须拒绝该前缀**，只允许私网调用。
+
+| 方法与路径 | 用途 | 请求 |
+| --- | --- | --- |
+| `POST /jim/internal/token` | 业务账号换 IM 凭据（幂等） | `account`、`nickname`、`avatar` |
+| `POST /jim/internal/group-member` | 幂等加群成员（注册即入群用） | `group_id`、`user_ids` |
+| `GET /jim/internal/reports/list` | 举报列表，`status` 缺省 0（待处理） | Query：`status`、`limit`、`offset` |
+| `POST /jim/internal/reports/handle` | 批量处理举报 | `report_ids`、`action`(1 通过/2 驳回)、`result`、`operator_id` |
+| `POST /jim/internal/announcements/send` | 全站公告 | `content`（≤2000 字）、`sender_id`（缺省 `kefu`） |
+| `POST /jim/internal/users/ban` | 封禁账号 | `items:[{user_id,duration_seconds,ext}]`，`duration_seconds` ≤0 为永久 |
+| `POST /jim/internal/users/unban` | 解除封禁 | `user_ids` |
+
+失败语义与普通接口一致：HTTP 200 + 业务码；未配置 `serviceKey` 时一律 `17005`。

@@ -19,6 +19,10 @@ const (
 	scopeSendCode   = "sendcode"
 	scopeSendHour   = "sendcode-hour"
 	scopeSendCodeIP = "sendcode-ip"
+	scopeReport     = "report"
+
+	// 举报没有配置项：正常用户一天举报不了几次，20 次/时足够。
+	defaultReportPerHour = 20
 )
 
 // AllowLoginAttempt 判断一次密码登录尝试是否放行。
@@ -92,6 +96,17 @@ func AllowSendVerifyCode(appkey, target, ip string) (bool, time.Duration) {
 		}
 	}
 	return true, 0
+}
+
+// AllowReportSubmit 限制同一用户的举报提交频率，避免举报箱被刷爆。
+func AllowReportSubmit(appkey, reporterId string) (bool, time.Duration) {
+	if reporterId == "" {
+		return true, 0
+	}
+	return authLimiter.Allow(limitKey(scopeReport, appkey, reporterId), ratelimit.Limit{
+		Count:  defaultReportPerHour,
+		Window: time.Hour,
+	})
 }
 
 // limitKey 构造限流键：统一小写，避免大小写变体绕过窗口。

@@ -56,7 +56,6 @@ func NewGroupAdminStorage() models.IGroupAdminStorage {
 func NewFeedbackStorage() models.IFeedbackStorage {
 	return &dbs.FeedbackDao{}
 }
-
 func NewConverConfStorage() models.IConverConfStorage {
 	return &dbs.ConverConfDao{}
 }
@@ -75,4 +74,8 @@ func NewBlockUserStorage() models.IBlockUserStorage {
 
 func NewSensitiveWordStorage() models.ISensitiveWordStorage {
 	return &dbs.SensitiveWordDao{}
+}
+
+func NewReportStorage() models.IReportStorage {
+	return &dbs.ReportDao{}
 }

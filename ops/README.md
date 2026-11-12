@@ -868,3 +868,21 @@ SELECT COUNT(*) FROM users WHERE app_key='dz.djnovels.com' AND login_account IS 
 注册拉群是 **best-effort**：IM 侧抖动或未配置 `group_id` 只记一行日志
 （`register_im_join_group_failed`），绝不阻塞、更不回滚注册；
 失败的用户仍会在打开聊天页或管理端批量补齐时进群。
+
+---
+
+## 举报工单与全站公告（业务层内部接口）
+
+举报只登记事实，不自动处置；处置动作由运营确认后单独执行，避免"举报即封号"。
+
+| 动作 | 调用 | 说明 |
+|---|---|---|
+| 看待处理举报 | `GET /jim/internal/reports/list?status=0` | `status`：0 待处理、1 已处理、2 已驳回、`-1` 全部 |
+| 处理举报 | `POST /jim/internal/reports/handle` | `{"report_ids":[1,2],"action":1,"result":"广告刷屏，已封禁","operator_id":"ops-a"}`；action 1 通过 / 2 驳回 |
+| 封禁 | `POST /jim/internal/users/ban` | `{"items":[{"user_id":"u1","duration_seconds":2592000}]}`，`duration_seconds` ≤0 表示永久 |
+| 解封 | `POST /jim/internal/users/unban` | `{"user_ids":["u1"]}` |
+| 全站公告 | `POST /jim/internal/announcements/send` | `{"content":"系统维护通知"}`，缺省发送者 `kefu` |
+
+统一要求两个头：`X-Service-Key: <serviceKey>` 与 `appkey: <appkey>`；
+**公网 Nginx 必须继续拒绝 `/jim/internal/`**。举报表由迁移
+`commons/dbcommons/sqls/20261112.sql` 自动创建（启动时执行），不需要手工建表。
