@@ -366,6 +366,9 @@ func CreateGroup(ctx context.Context, req *apimodels.GroupMembersReq) (errs.IMEr
 }
 
 func UpdateGroup(ctx context.Context, req *apimodels.GroupInfo) errs.IMErrorCode {
+	if code := requireGroupAdmin(ctx, req.GroupId); code != errs.IMErrorCode_SUCCESS {
+		return code
+	}
 	if ok, _ := CheckSensitiveText(ctx, req.GroupName); !ok {
 		return errs.IMErrorCode_APP_Sensitive
 	}
@@ -721,6 +724,9 @@ func QueryGrpMembers(ctx context.Context, groupId string, limit int64, offset st
 func SetGrpAnnouncement(ctx context.Context, req *apimodels.GroupAnnouncement) errs.IMErrorCode {
 	appkey := ctxs.GetAppKeyFromCtx(ctx)
 	requestId := ctxs.GetRequesterIdFromCtx(ctx)
+	if code := requireGroupAdmin(ctx, req.GroupId); code != errs.IMErrorCode_SUCCESS {
+		return code
+	}
 	storage := storages.NewGroupExtStorage()
 	storage.Upsert(models.GroupExt{
 		GroupId:   req.GroupId,
@@ -754,7 +760,9 @@ func GetGrpAnnouncement(ctx context.Context, groupId string) (errs.IMErrorCode, 
 }
 
 func ChgGroupOwner(ctx context.Context, req *apimodels.GroupOwnerChgReq) errs.IMErrorCode {
-	//TODO check right
+	if code := requireGroupOwner(ctx, req.GroupId); code != errs.IMErrorCode_SUCCESS {
+		return code
+	}
 	storage := storages.NewGroupStorage()
 	storage.UpdateCreatorId(ctxs.GetAppKeyFromCtx(ctx), req.GroupId, req.OwnerId)
 	//send notify
@@ -772,7 +780,9 @@ func ChgGroupOwner(ctx context.Context, req *apimodels.GroupOwnerChgReq) errs.IM
 
 func SetGroupMute(ctx context.Context, req *apimodels.SetGroupMuteReq) errs.IMErrorCode {
 	appkey := ctxs.GetAppKeyFromCtx(ctx)
-	//TODO check right
+	if code := requireGroupAdmin(ctx, req.GroupId); code != errs.IMErrorCode_SUCCESS {
+		return code
+	}
 	storage := storages.NewGroupStorage()
 	storage.UpdateGroupMuteStatus(appkey, req.GroupId, req.IsMute)
 	//sync to imserver
@@ -784,7 +794,9 @@ func SetGroupMute(ctx context.Context, req *apimodels.SetGroupMuteReq) errs.IMEr
 
 func SetGroupMembersMute(ctx context.Context, req *apimodels.SetGroupMemberMuteReq) errs.IMErrorCode {
 	appkey := ctxs.GetAppKeyFromCtx(ctx)
-	//TODO check right
+	if code := requireGroupAdmin(ctx, req.GroupId); code != errs.IMErrorCode_SUCCESS {
+		return code
+	}
 	storage := storages.NewGroupMemberStorage()
 	storage.UpdateMute(appkey, req.GroupId, int(req.IsMute), req.MemberIds, 0)
 	//sync to imserver
@@ -796,6 +808,9 @@ func SetGroupMembersMute(ctx context.Context, req *apimodels.SetGroupMemberMuteR
 
 func SetGroupVerifyType(ctx context.Context, req *apimodels.SetGroupVerifyTypeReq) errs.IMErrorCode {
 	appkey := ctxs.GetAppKeyFromCtx(ctx)
+	if code := requireGroupAdmin(ctx, req.GroupId); code != errs.IMErrorCode_SUCCESS {
+		return code
+	}
 	storage := storages.NewGroupExtStorage()
 	storage.Upsert(models.GroupExt{
 		GroupId:   req.GroupId,
@@ -809,7 +824,9 @@ func SetGroupVerifyType(ctx context.Context, req *apimodels.SetGroupVerifyTypeRe
 
 func SetGroupHisMsgVisible(ctx context.Context, req *apimodels.SetGroupHisMsgVisibleReq) errs.IMErrorCode {
 	appkey := ctxs.GetAppKeyFromCtx(ctx)
-	//TODO check right
+	if code := requireGroupAdmin(ctx, req.GroupId); code != errs.IMErrorCode_SUCCESS {
+		return code
+	}
 	visible := req.GroupHisMsgVisible
 	var hideGrpMsg int64 = 1
 	if visible > 0 {
@@ -840,7 +857,9 @@ func SetGroupHisMsgVisible(ctx context.Context, req *apimodels.SetGroupHisMsgVis
 
 func SetGroupManagementConfs(ctx context.Context, req *apimodels.GroupManagement) errs.IMErrorCode {
 	appkey := ctxs.GetAppKeyFromCtx(ctx)
-	//TODO check right
+	if code := requireGroupAdmin(ctx, req.GroupId); code != errs.IMErrorCode_SUCCESS {
+		return code
+	}
 	items := []models.GroupExt{}
 	if req.GroupEditMsgRight != nil {
 		items = append(items, models.GroupExt{
@@ -917,6 +936,9 @@ func SetGroupManagementConfs(ctx context.Context, req *apimodels.GroupManagement
 
 func AddGroupAdministrators(ctx context.Context, req *apimodels.GroupAdministratorsReq) errs.IMErrorCode {
 	appkey := ctxs.GetAppKeyFromCtx(ctx)
+	if code := requireGroupOwner(ctx, req.GroupId); code != errs.IMErrorCode_SUCCESS {
+		return code
+	}
 	storage := storages.NewGroupAdminStorage()
 	for _, adminId := range req.AdminIds {
 		storage.Upsert(models.GroupAdmin{
@@ -929,6 +951,9 @@ func AddGroupAdministrators(ctx context.Context, req *apimodels.GroupAdministrat
 }
 
 func DelGroupAdministrators(ctx context.Context, req *apimodels.GroupAdministratorsReq) errs.IMErrorCode {
+	if code := requireGroupOwner(ctx, req.GroupId); code != errs.IMErrorCode_SUCCESS {
+		return code
+	}
 	storage := storages.NewGroupAdminStorage()
 	storage.BatchDel(ctxs.GetAppKeyFromCtx(ctx), req.GroupId, req.AdminIds)
 	return errs.IMErrorCode_SUCCESS
@@ -1123,4 +1148,41 @@ func QryGrpApplications(ctx context.Context, startTime int64, count int32, order
 		}
 	}
 	return errs.IMErrorCode_SUCCESS, ret
+}
+
+// requireGroupAdmin 群主或管理员才能修改群设置。
+// 校验放在 Service 层，让所有入口共用同一道闸门，新增接口不会漏。
+func requireGroupAdmin(ctx context.Context, groupId string) errs.IMErrorCode {
+	appkey := ctxs.GetAppKeyFromCtx(ctx)
+	userId := ctxs.GetRequesterIdFromCtx(ctx)
+	if userId == "" {
+		return errs.IMErrorCode_APP_NOT_LOGIN
+	}
+	if groupId == "" {
+		return errs.IMErrorCode_APP_REQ_BODY_ILLEGAL
+	}
+	if !isGrpAdmin(appkey, userId, groupId) {
+		return errs.IMErrorCode_APP_GROUP_NORIGHT
+	}
+	return errs.IMErrorCode_SUCCESS
+}
+
+// requireGroupOwner 只有群主能做（转让群主、任免管理员）。
+func requireGroupOwner(ctx context.Context, groupId string) errs.IMErrorCode {
+	appkey := ctxs.GetAppKeyFromCtx(ctx)
+	userId := ctxs.GetRequesterIdFromCtx(ctx)
+	if userId == "" {
+		return errs.IMErrorCode_APP_NOT_LOGIN
+	}
+	if groupId == "" {
+		return errs.IMErrorCode_APP_REQ_BODY_ILLEGAL
+	}
+	grp, err := storages.NewGroupStorage().FindById(appkey, groupId)
+	if err != nil || grp == nil {
+		return errs.IMErrorCode_APP_GROUP_DEFAULT
+	}
+	if grp.CreatorId != userId {
+		return errs.IMErrorCode_APP_GROUP_NORIGHT
+	}
+	return errs.IMErrorCode_SUCCESS
 }
