@@ -58,9 +58,12 @@ func Login(ctx *gin.Context) {
 		responses.ErrorHttpResp(ctx, errs.IMErrorCode_APP_USER_NOT_EXIST)
 		return
 	}
-	if user.LoginPass != utils.SHA1(req.Password) {
+	if !services.VerifyPassword(user.LoginPass, req.Password) {
 		responses.ErrorHttpResp(ctx, errs.IMErrorCode_APP_LOGIN_ERR_PASS)
 		return
+	}
+	if services.PasswordNeedsRehash(user.LoginPass) {
+		services.UpgradePasswordHash(ctxs.ToCtx(ctx), user.UserId, req.Password)
 	}
 	services.ResetLoginAttempts(appkey, identity)
 	sdk := imsdk.GetImSdk(appkey)
@@ -114,8 +117,12 @@ func Register(ctx *gin.Context) {
 	appkey := ctx.GetString(string(ctxs.CtxKey_AppKey))
 	userId := utils.GenerateUUIDShort11()
 	nickname := fmt.Sprintf("user%05d", utils.RandInt(100000))
+	passHash, err := services.HashPassword(req.Password)
+	if err != nil {
+		responses.ErrorHttpResp(ctx, errs.IMErrorCode_APP_DEFAULT)
+		return
+	}
 	storage := storages.NewUserStorage()
-	var err error
 	if req.Account != "" {
 		//check account
 		if !checkAccount(req.Account) {
@@ -127,7 +134,7 @@ func Register(ctx *gin.Context) {
 			UserId:       userId,
 			Nickname:     nickname,
 			LoginAccount: req.Account,
-			LoginPass:    utils.SHA1(req.Password),
+			LoginPass:    passHash,
 			AppKey:       appkey,
 		})
 	} else if req.Phone != "" {
@@ -144,7 +151,7 @@ func Register(ctx *gin.Context) {
 			UserId:    userId,
 			Nickname:  nickname,
 			Phone:     req.Phone,
-			LoginPass: utils.SHA1(req.Password),
+			LoginPass: passHash,
 			AppKey:    appkey,
 		})
 	} else if req.Email != "" {
@@ -152,7 +159,7 @@ func Register(ctx *gin.Context) {
 			UserId:    userId,
 			Nickname:  nickname,
 			Email:     req.Email,
-			LoginPass: utils.SHA1(req.Password),
+			LoginPass: passHash,
 			AppKey:    appkey,
 		})
 	}

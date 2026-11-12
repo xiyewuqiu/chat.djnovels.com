@@ -136,6 +136,16 @@
 **改法**：`POST /jim/internal/announcements/send`（`SendBroadCastMsg`，缺省发送者 `kefu`）、`POST /jim/internal/users/ban`（支持时长，≤0 永久）、`POST /jim/internal/users/unban`。全部走服务密钥。
 **验证**：`services/reportservice_test.go` 中的参数校验用例；SDK 调用未在真机验证。
 
+### 4.8 密码哈希从 SHA1 升级到 bcrypt（P0）
+
+**问题**：`users.login_pass` 存的是无盐 SHA1，库一旦泄露，撞库成本几乎为零。
+**改法**：
+- 新摘要格式 `bcrypt$<hash>`（`services/password.go`），`VerifyPassword` 同时接受 bcrypt 与历史 SHA1；登录成功且摘要为旧格式时就地升级（`UpgradePasswordHash`，失败只记日志不挡登录）。
+- 注册、改密、找回密码、内部建号全部改写 bcrypt。
+- 迁移 `20261113.sql` 把 `users.login_pass` 从 `varchar(50)` 扩到 `varchar(255)`（bcrypt 摘要 60 字符放不下）。
+**验证**：`services/password_test.go`（bcrypt 往返、旧 SHA1 仍可校验且被标记升级、空值、72 字节截断）。
+**注意**：全量升级是"登录即迁移"，长期不登录的账号会一直停留在旧格式；如需强制，可在运营侧发起一次批量重算（需要用户重设密码）。
+
 ---
 
 ## 5. 待办清单
@@ -150,7 +160,6 @@
    与 `admin.html`，回到上游 console。未做修改的原因：该目录是未提交的进行中改动，动它会和 WIP 冲突。
 2. Callback 签名：`/callback/assistants/msgcallback` 目前无来源校验且失败也返回成功，可被伪造为助手消息。
 3. Telegram Bot 列表返回完整 Token，改为脱敏或限权。
-4. SHA1 改 Argon2id/bcrypt：登录、改密、重置三处一起迁移，存量按登录时透明升级。
 
 **P1（产品，需要客户端配合）**
 5. 消息搜索：引擎加 `/hismsgs/search`＋内容索引，客户端加搜索页。

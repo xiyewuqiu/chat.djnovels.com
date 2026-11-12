@@ -11,6 +11,7 @@ require (
 	github.com/aliyun/credentials-go v1.4.6
 	github.com/go-mail/mail/v2 v2.3.0
 	github.com/juggleim/imserver-sdk-go v1.0.16
+	golang.org/x/crypto v0.39.0
 )
 
 require (
@@ -89,7 +90,6 @@ require (
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.2.12 // indirect
 	golang.org/x/arch v0.8.0 // indirect
-	golang.org/x/crypto v0.39.0 // indirect
 	golang.org/x/net v0.41.0 // indirect
 	golang.org/x/sys v0.33.0 // indirect
 	golang.org/x/text v0.26.0 // indirect

@@ -76,12 +76,16 @@ func IssueUserToken(ctx context.Context, account, nickname, avatar string) (user
 			// 业务侧没给昵称时回落成账号本身，避免引擎侧出现无名用户
 			displayName = account
 		}
+		passHash, hashErr := HashPassword(utils.GenerateUUID().String())
+		if hashErr != nil {
+			return "", "", errs.IMErrorCode_APP_DEFAULT
+		}
 		err = storage.Create(dbModels.User{
 			UserId:       userId,
 			Nickname:     displayName,
 			UserPortrait: avatar,
 			LoginAccount: account,
-			LoginPass:    utils.SHA1(utils.GenerateUUID().String()),
+			LoginPass:    passHash,
 			AppKey:       appkey,
 		})
 		if err != nil {

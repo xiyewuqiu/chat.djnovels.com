@@ -886,3 +886,8 @@ SELECT COUNT(*) FROM users WHERE app_key='dz.djnovels.com' AND login_account IS 
 统一要求两个头：`X-Service-Key: <serviceKey>` 与 `appkey: <appkey>`；
 **公网 Nginx 必须继续拒绝 `/jim/internal/`**。举报表由迁移
 `commons/dbcommons/sqls/20261112.sql` 自动创建（启动时执行），不需要手工建表。
+
+密码哈希升级（2026-11-12）带了两条自动迁移，重启业务层时执行：
+`20261112.sql` 建 `reports` 表，`20261113.sql` 把 `users.login_pass` 扩到 `varchar(255)`
+（bcrypt 摘要 60 字符，旧的 `varchar(50)` 装不下）。**升级前先备份 `users` 表**：
+`ALTER TABLE` 在 MySQL 8 上通常走 INSTANT，但这是共享表，回滚只能靠备份。

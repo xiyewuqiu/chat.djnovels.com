@@ -6,7 +6,6 @@ import (
 	apimodels "github.com/juggleim/jugglechat-server/apis/models"
 	"github.com/juggleim/jugglechat-server/commons/ctxs"
 	"github.com/juggleim/jugglechat-server/commons/errs"
-	utils "github.com/juggleim/jugglechat-server/commons/tools"
 	"github.com/juggleim/jugglechat-server/storages"
 	"github.com/juggleim/jugglechat-server/storages/models"
 )
@@ -72,7 +71,11 @@ func ResetPass(ctx context.Context, req *apimodels.ResetPassReq) errs.IMErrorCod
 	if err != nil || user == nil {
 		return errs.IMErrorCode_APP_USER_NOT_EXIST
 	}
-	if err := storage.UpdatePass(appkey, user.UserId, utils.SHA1(req.Password)); err != nil {
+	hashed, hashErr := HashPassword(req.Password)
+	if hashErr != nil {
+		return errs.IMErrorCode_APP_DEFAULT
+	}
+	if err := storage.UpdatePass(appkey, user.UserId, hashed); err != nil {
 		return errs.IMErrorCode_APP_DEFAULT
 	}
 	return errs.IMErrorCode_SUCCESS

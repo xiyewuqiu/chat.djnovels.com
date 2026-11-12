@@ -1469,7 +1469,9 @@ POST /callback/assistants/msgcallback
 8. 分页接口混用了 `page/size`、`offset/count`、`offset/limit` 和 `start/count/order`，调用时应以各接口说明为准。
 9. 仓库中还存在未注册的 `QryFriends`、`AddFriend` Handler，它们不属于当前可调用 API。
 10. 登录、验证码下发、验证码校验均有限流（见 `security` 配置），超限返回 `17019` 并带 `Retry-After`。限流窗口在进程内存里，多进程部署会各算各的。
-11. 静态 Web 的 `GET /`、`HEAD /` 和 SPA fallback 不计入本文 90 个业务接口。
+11. 静态 Web 的 `GET /`、`HEAD /` 和 SPA fallback 不计入本文 91 个业务接口。
+12. 密码摘要为 `bcrypt$<hash>`；历史 SHA1 摘要仍可登录，并在登录成功后就地升级。
+    该字段需要 `varchar(255)`（迁移 `20261113.sql`），旧库的 `varchar(50)` 装不下 bcrypt。
 
 ## 22. 代码位置
 
