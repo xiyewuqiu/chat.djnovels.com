@@ -36,6 +36,8 @@ func Route(eng *gin.Engine, prefix string) *gin.RouterGroup {
 	group.POST("/users/update", apis.UpdateUser)
 	group.POST("/users/del", apis.DelUser)
 	group.POST("/users/updpass", apis.UpdatePass)
+	group.POST("/users/resetpass/send", apis.ResetPassSend)
+	group.POST("/users/resetpass", apis.ResetPass)
 	group.POST("/users/updsettings", apis.UpdateUserSettings)
 	group.POST("/users/bindemail/send", apis.BindEmailSendEmail)
 	group.POST("/users/bindemail", apis.BindEmail)
@@ -84,6 +86,8 @@ func Route(eng *gin.Engine, prefix string) *gin.RouterGroup {
 	group.POST("/groups/management/set", apis.SetGrpManagementConfs)
 	group.GET("/groups/mygroups", apis.QryMyGroups)
 	group.POST("/groups/mygroups/search", apis.SearchMyGroups)
+	group.POST("/groups/discover", apis.DiscoverGroups)
+	group.POST("/groups/setpublic", apis.SetGroupPublic)
 	// grp application
 	group.GET("/groups/myapplications", apis.QryMyGrpApplications)
 	group.GET("/groups/mypendinginvitations", apis.QryMyPendingGrpInvitations)

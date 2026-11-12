@@ -49,6 +49,10 @@
 
 引擎仓库必须保持与上游零差异（见第 11 节），这是唯一能长期低成本跟版的姿势。
 
+> 现状更正（2026-11-12）：`chatapi.djnovels.com` 已不再与上游零差异——本地有 31 处改动
+> （管理台 v2、19 条 Modern IM 路由、webhook 引擎等），且工作区还有未提交修改。
+> 跟版前先读 `docs/feature-audit-2026-11.zh-CN.md` 第 6.2 节，不要按"纯上游"直接 rebase。
+
 ---
 
 ## 2. 目录约定
@@ -482,6 +486,15 @@ mux.Handle("/jim/", ginEngine)
    注意这条**只覆盖 65101**：`ipWhitelist` 挂在 API 网关的路由组上
    （`services/apigateway/routers/router.go:18`），而 65103 上的 `/jim/*` 走的是业务层自己的
    gin，只有 appkey + token 校验，**没有 IP 白名单**。65103 的收敛只能靠 Nginx 的 vhost。
+7. **固定测试验证码默认关闭**：`security.allow_fixed_verify_code` 不写即为 `false`，
+   此时 `000000` 与错误验证码同等待遇。曾经依赖它做联调的环境要显式打开，
+   生产必须保持关闭（开着等于任何人可用任意手机号登录）。
+8. **认证限流是进程内的**：登录 10 次/分/账号、验证码 1 次/分且 5 次/时/目标、
+   IP 维度 120 次/分与 60 次/时。单 PM2 进程成立，将来多进程要换共享存储。
+9. **公开群发现需要显式标记**：群默认不出现在 `/jim/groups/discover` 里，
+   由群主/管理员调 `POST /jim/groups/setpublic`，或运维直接写
+   `groupinfoexts(item_key='is_public', item_value='1')`。
+   功能面与差距清单见 `docs/feature-audit-2026-11.zh-CN.md`。
 
 ---
 

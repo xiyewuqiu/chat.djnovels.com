@@ -326,3 +326,33 @@ func QryGrpQrCode(ctx *gin.Context) {
 		"qr_code": base64.StdEncoding.EncodeToString(buf.Bytes()),
 	})
 }
+
+// SetGroupPublic 设置群是否公开，只有群主或群管理员可以调用。
+func SetGroupPublic(ctx *gin.Context) {
+	req := &models.SetGroupPublicReq{}
+	if err := ctx.BindJSON(req); err != nil || req.GroupId == "" {
+		responses.ErrorHttpResp(ctx, errs.IMErrorCode_APP_REQ_BODY_ILLEGAL)
+		return
+	}
+	code := services.SetGroupPublic(ctxs.ToCtx(ctx), req)
+	if code != errs.IMErrorCode_SUCCESS {
+		responses.ErrorHttpResp(ctx, code)
+		return
+	}
+	responses.SuccessHttpResp(ctx, nil)
+}
+
+// DiscoverGroups 搜索公开群，带游标分页。
+func DiscoverGroups(ctx *gin.Context) {
+	req := &models.GroupDiscoverReq{}
+	if err := ctx.BindJSON(req); err != nil {
+		responses.ErrorHttpResp(ctx, errs.IMErrorCode_APP_REQ_BODY_ILLEGAL)
+		return
+	}
+	code, resp := services.DiscoverGroups(ctxs.ToCtx(ctx), req)
+	if code != errs.IMErrorCode_SUCCESS {
+		responses.ErrorHttpResp(ctx, code)
+		return
+	}
+	responses.SuccessHttpResp(ctx, resp)
+}

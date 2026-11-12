@@ -69,6 +69,7 @@ type IGroupStorage interface {
 	UpdateGrpName(appkey, groupId, groupName, groupPortrait string) error
 	UpdateCreatorId(appkey, groupId, creatorId string) error
 	QryGroups(appkey, name string, startId, limit int64, isPositive bool) ([]*Group, error)
+	QryPublicGroups(appkey, keyword string, startId, limit int64) ([]*Group, error)
 }
 
 type GroupExt struct {
@@ -120,6 +121,8 @@ type IGroupMemberStorage interface {
 	UpdateMute(appkey, groupId string, isMute int, memberIds []string, muteEndAt int64) error
 	UpdateAllow(appkey, groupId string, isAllow int, memberIds []string) error
 	CountByGroup(appkey, groupId string) int
+	CountByGroups(appkey string, groupIds []string) map[string]int
+	FindByMemberAndGroups(appkey, memberId string, groupIds []string) map[string]*GroupMember
 	UpdateGrpDisplayName(appkey, groupId, memberId string, displayName string) error
 }
 

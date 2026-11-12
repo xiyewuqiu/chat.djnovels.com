@@ -253,6 +253,60 @@ func (member GroupMemberDao) CountByGroup(appkey, groupId string) int {
 	return int(count)
 }
 
+// CountByGroups 一次查出多个群的成员数，供群发现列表使用，避免按群 N+1 查询。
+func (member GroupMemberDao) CountByGroups(appkey string, groupIds []string) map[string]int {
+	ret := map[string]int{}
+	if len(groupIds) == 0 {
+		return ret
+	}
+	var rows []struct {
+		GroupId string
+		Total   int
+	}
+	err := dbcommons.GetDb().Model(&GroupMemberDao{}).
+		Select("group_id,count(*) as total").
+		Where("app_key=? and group_id in(?)", appkey, groupIds).
+		Group("group_id").
+		Scan(&rows).Error
+	if err != nil {
+		return ret
+	}
+	for _, row := range rows {
+		ret[row.GroupId] = row.Total
+	}
+	return ret
+}
+
+// FindByMemberAndGroups 一次查出某用户在多个群里的成员记录。
+func (member GroupMemberDao) FindByMemberAndGroups(appkey, memberId string, groupIds []string) map[string]*models.GroupMember {
+	ret := map[string]*models.GroupMember{}
+	if len(groupIds) == 0 {
+		return ret
+	}
+	var items []*GroupMemberDao
+	err := dbcommons.GetDb().
+		Where("app_key=? and member_id=? and group_id in(?)", appkey, memberId, groupIds).
+		Find(&items).Error
+	if err != nil {
+		return ret
+	}
+	for _, item := range items {
+		ret[item.GroupId] = &models.GroupMember{
+			ID:             item.ID,
+			GroupId:        item.GroupId,
+			MemberId:       item.MemberId,
+			MemberType:     item.MemberType,
+			CreatedTime:    item.CreatedTime,
+			AppKey:         item.AppKey,
+			IsMute:         item.IsMute,
+			IsAllow:        item.IsAllow,
+			MuteEndAt:      item.MuteEndAt,
+			GrpDisplayName: item.GrpDisplayName,
+		}
+	}
+	return ret
+}
+
 func (member GroupMemberDao) UpdateGrpDisplayName(appkey, groupId, memberId string, displayName string) error {
 	return dbcommons.GetDb().Model(&member).Where("app_key=? and group_id=? and member_id=?", appkey, groupId, memberId).Update("grp_display_name", displayName).Error
 }

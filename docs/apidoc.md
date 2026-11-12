@@ -2,9 +2,9 @@
 
 本文档根据当前仓库的路由、Handler、请求模型和 Service 实现整理，覆盖所有已注册的 HTTP 业务接口。
 
-- 主业务接口：85 个，统一使用 `/jim` 前缀。
+- 主业务接口：89 个，统一使用 `/jim` 前缀。
 - 助手回调接口：1 个，使用独立的 `/callback` 前缀和端口。
-- 合计：86 个 `method + path` 接口。
+- 合计：90 个 `method + path` 接口。
 - 文档反映当前代码行为；代码中没有显式实现的校验、权限或数据清理能力，不应视为接口保证。
 
 ## 1. 服务地址
@@ -275,7 +275,7 @@ GET /jim/servers/list?limit=100&offset=
 - 返回：`items` 服务配置列表和下一页 `offset`。
 - 主要错误：`17004`。
 
-## 6. 登录与注册接口（10 个）
+## 6. 登录与注册接口（12 个）
 
 ### 6.1 密码登录
 
@@ -404,6 +404,40 @@ POST /jim/login/qrcode/confirm
 - Body：`id` 必填。
 - 将二维码记录绑定到当前登录用户。
 - 返回：`data: null`。
+
+### 6.10 找回密码：发送验证码
+
+```http
+POST /jim/users/resetpass/send
+```
+
+- 鉴权：AppKey（未登录可调用）。
+- Body：`phone` 或 `email` 二选一。
+- 账号存在时下发验证码；**账号不存在同样返回成功**，避免被用来枚举注册用户。
+- 同一手机号/邮箱每分钟 1 次、每小时 5 次；同一 IP 每小时 60 次。超限返回 `17019`，并带 `Retry-After` 秒数。
+- 返回：`data: null`。
+- 主要错误：`17003`、`17008`、`17019`。
+
+```json
+{"phone":"13800000000"}
+```
+
+### 6.11 找回密码：重置密码
+
+```http
+POST /jim/users/resetpass
+```
+
+- 鉴权：AppKey（未登录可调用）。
+- Body：`phone` 或 `email`、`code`、`password`（6–32 位）。
+- 验证码规则与登录一致：有效期 5 分钟；固定测试码 `000000` 仅在 `security.allow_fixed_verify_code: true` 时可用，生产默认关闭。
+- 同一手机号/邮箱每分钟最多 10 次验证码校验。
+- 返回：`data: null`。
+- 主要错误：`17003`、`17009`、`17012`、`17017`、`17019`。
+
+```json
+{"phone":"13800000000","code":"123456","password":"newpass123"}
+```
 
 ## 7. 文件、翻译和同步接口（3 个）
 
@@ -705,7 +739,7 @@ GET /jim/telegrambots/list?offset=&count=20
 - 返回：`items` 和下一页 `offset`。
 - 当前返回项包含完整 `bot_token`，调用方应注意敏感信息保护。
 
-## 10. 群组基本接口（17 个）
+## 10. 群组基本接口（19 个）
 
 ### 10.1 创建群组
 
@@ -896,6 +930,39 @@ GET /jim/groups/qrcode?group_id=group_123
 - Query：`group_id` 必填。
 - 返回：`{"qr_code":"<PNG base64>"}`。
 - 二维码动作是 `join_group`，并包含群 ID 和当前用户 ID。
+
+### 10.17 搜索公开群（群发现）
+
+```http
+POST /jim/groups/discover
+```
+
+- 鉴权：登录。
+- Body：`keyword`（可空，按群名模糊匹配）、`limit`（默认 20，上限 50）、`offset`（上一页返回的游标）。
+- 只返回 `groupinfoexts` 中 `is_public=1` 的群，按创建顺序倒序。
+- 每项含 `member_count`、`is_joined`、`my_role`（0 成员 / 1 群主 / 2 管理员 / 3 非成员）。
+- 返回：`{"items":[...],"offset":"<游标>"}`；`offset` 原样传回即翻页。
+- 主要错误：`17003`。
+
+```json
+{"keyword":"书友","limit":20,"offset":""}
+```
+
+### 10.18 设置群公开
+
+```http
+POST /jim/groups/setpublic
+```
+
+- 鉴权：登录。
+- Body：`group_id`、`is_public`（布尔）。
+- 仅群主或群管理员可调用，其他人返回 `17202`。
+- 公开状态存在 `groupinfoexts`（`item_key=is_public`），不改 `groupinfos` 表结构。
+- 返回：`data: null`。
+
+```json
+{"group_id":"group_123","is_public":true}
+```
 
 ## 11. 群申请与邀请接口（8 个）
 
@@ -1338,11 +1405,11 @@ POST /callback/assistants/msgcallback
 | 模块 | 接口数 |
 | --- | ---: |
 | 服务发现 | 3 |
-| 登录与注册 | 10 |
+| 登录与注册 | 12 |
 | 文件、翻译和同步 | 3 |
 | 用户 | 16 |
 | Telegram Bot | 4 |
-| 群组基本操作 | 17 |
+| 群组基本操作 | 19 |
 | 群申请与邀请 | 8 |
 | 群管理 | 9 |
 | 好友 | 9 |
@@ -1351,7 +1418,7 @@ POST /callback/assistants/msgcallback
 | 应用 | 1 |
 | 反馈 | 1 |
 | 助手回调 | 1 |
-| **总计** | **86** |
+| **总计** | **90** |
 
 ## 20. 兼容路径
 
@@ -1367,12 +1434,13 @@ POST /callback/assistants/msgcallback
 2. 用户 Token 没有 `Bearer ` 前缀；Bearer 模式是 API Key 模式。
 3. Bearer API Key 鉴权不会设置当前用户 ID，不适合依赖当前用户身份的接口。
 4. 当前多个用户和群管理接口缺少对象级权限校验，不能仅因“需要登录”就认为已经安全授权。
-5. 验证码逻辑中存在特殊测试码行为；生产部署应审查并移除不安全的绕过逻辑。
+5. 固定测试验证码 `000000` 已改为配置门控（`security.allow_fixed_verify_code`，默认 `false`）。开启等于允许任何人冒充任意手机号/邮箱，生产环境必须保持关闭。
 6. Telegram Bot 列表当前返回完整 Token，应限制接口访问并避免日志泄漏。
 7. Callback 接口当前没有签名和来源校验，并且失败时仍返回成功。
 8. 分页接口混用了 `page/size`、`offset/count`、`offset/limit` 和 `start/count/order`，调用时应以各接口说明为准。
 9. 仓库中还存在未注册的 `QryFriends`、`AddFriend` Handler，它们不属于当前可调用 API。
-10. 静态 Web 的 `GET /`、`HEAD /` 和 SPA fallback 不计入本文 86 个业务接口。
+10. 登录、验证码下发、验证码校验均有限流（见 `security` 配置），超限返回 `17019` 并带 `Retry-After`。限流窗口在进程内存里，多进程部署会各算各的。
+11. 静态 Web 的 `GET /`、`HEAD /` 和 SPA fallback 不计入本文 90 个业务接口。
 
 ## 22. 代码位置
 

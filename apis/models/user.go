@@ -79,6 +79,20 @@ type UpdUserPassReq struct {
 	NewPassword string `json:"new_password"`
 }
 
+// ResetPassSendReq 请求重置密码验证码，手机号与邮箱二选一。
+type ResetPassSendReq struct {
+	Phone string `json:"phone"`
+	Email string `json:"email"`
+}
+
+// ResetPassReq 用验证码重置密码，不要求登录态。
+type ResetPassReq struct {
+	Phone    string `json:"phone"`
+	Email    string `json:"email"`
+	Code     string `json:"code"`
+	Password string `json:"password"`
+}
+
 type Friends struct {
 	Items  []*UserObj `json:"items"`
 	Offset string     `json:"offset,omitempty"`

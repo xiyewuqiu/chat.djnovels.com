@@ -178,6 +178,33 @@ type SetGroupDisplayNameReq struct {
 	GrpDisplayName string `json:"grp_display_name"`
 }
 
+// SetGroupPublicReq 由群主/管理员设置该群是否出现在公开群列表里。
+type SetGroupPublicReq struct {
+	GroupId  string `json:"group_id"`
+	IsPublic bool   `json:"is_public"`
+}
+
+// GroupDiscoverReq 公开群搜索：keyword 为空时按创建时间倒序翻页。
+type GroupDiscoverReq struct {
+	Keyword string `json:"keyword"`
+	Limit   int64  `json:"limit"`
+	Offset  string `json:"offset"`
+}
+
+type DiscoveredGroup struct {
+	GroupId       string        `json:"group_id"`
+	GroupName     string        `json:"group_name"`
+	GroupPortrait string        `json:"group_portrait"`
+	MemberCount   int32         `json:"member_count"`
+	IsJoined      bool          `json:"is_joined"`
+	MyRole        GrpMemberRole `json:"my_role"`
+}
+
+type GroupDiscoverResp struct {
+	Items  []*DiscoveredGroup `json:"items"`
+	Offset string             `json:"offset"`
+}
+
 type QryGrpApplicationsResp struct {
 	Items []*GrpApplicationItem `json:"items"`
 }
