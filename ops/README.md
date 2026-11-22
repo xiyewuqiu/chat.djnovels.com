@@ -49,9 +49,10 @@
 
 引擎仓库必须保持与上游零差异（见第 11 节），这是唯一能长期低成本跟版的姿势。
 
-> 现状更正（2026-11-12）：`chatapi.djnovels.com` 已不再与上游零差异——本地有 31 处改动
-> （管理台 v2、19 条 Modern IM 路由、webhook 引擎等），且工作区还有未提交修改。
-> 跟版前先读 `docs/feature-audit-2026-11.zh-CN.md` 第 6.2 节，不要按"纯上游"直接 rebase。
+> 现状更正（2026-11-22）：`chatapi.djnovels.com` 已不再与上游零差异——本地改动包括
+> 管理台 v2 及其鉴权、19 条 Modern IM 路由、webhook 引擎与签名等。工作区已收干净，
+> 无未提交改动。跟版前先读 `docs/feature-audit-2026-11.zh-CN.md` 第 6 节，
+> 不要按"纯上游"直接 rebase。
 
 ---
 

@@ -1,5 +1,9 @@
 # 未解决项的可执行方案（2026-11-12）
 
+> **2026-11-22 状态更新**：三项里前两项已落地 —— 管理台 v2 鉴权（含监听收敛）与 Webhook 签名。
+> 只剩消息全文搜索未做，它卡在"客户端仓库不在本工作区"这个前提上。
+> 已修复的两节保留原方案记录，并在开头写明实际处置与验收证据。
+
 审计与功能迭代已收口，剩三项没有落地。本文把每一项拆成"改哪个文件、加什么、怎么验收"，
 让它们从"卡住"变成"能排期"。所有结论都来自对本地代码的核对，未做运行时验证的地方会标出来。
 
@@ -162,22 +166,42 @@ curl -s -X POST http://127.0.0.1:65101/apigateway/hismsgs/search \
 
 ---
 
-## 3. Webhook 签名（P2）
+## 3. Webhook 签名（P2）—— 2026-11-22 已修复
 
-### 现状证据
+### 处置结果
 
-`chatapi/services/commonservices/webhook_engine.go` 已经实现三类投递
-（PreSend 同步检查、PostSend 异步通知、Event 事件），但请求头只有：
+| 改动 | 文件 | 内容 |
+| --- | --- | --- |
+| 签名组件 | `chatapi/services/commonservices/webhook_sign.go`（新增） | `WebhookSignedPayload` / `SignWebhookPayload` / `BuildWebhookHeaders`；常量 `WebhookSignatureToleranceMillis = 5min` |
+| 三个投递点 | `chatapi/services/commonservices/webhook_engine.go` | PreSend / PostSend / Event 统一换成 `BuildWebhookHeaders`，时间戳与签名同源 |
+| 接入文档 | `docs/webhook-signature.zh-CN.md`（新增） | 契约、算法、Go 与 Node 参考实现、Express 取原始 body 的写法、排查顺序、已知边界 |
+| 测试 | `chatapi/services/commonservices/webhook_sign_test.go`、`webhook_delivery_test.go`（新增） | 见下 |
 
-```
-Content-Type: application/json
-X-App-Key: <appkey>
-```
+签名口径：`hex(HMAC-SHA256(app_secret, timestamp + "." + raw_body))`，时间戳为 Unix 毫秒。
 
-接收方无法区分"引擎发的"和"任何人发的"。`webhook_engine.go` 本身**不在**当前 WIP 改动清单里，
-这一项是三项中冲突风险最低的。
+两个刻意的设计选择：
 
-### 方案（半天）
+- **时间戳进签名**：只签 body 的话，同一份请求可以被无限期重放。
+- **`app_secret` 为空时不发签名头**：这属于租户配置异常（建租户时必然生成 secret），
+  平台不替它编一个假签名，让接收方按契约拒绝，问题才会暴露。不会因为空 secret 而中断投递。
+
+### 验收（已执行）
+
+`go test ./services/commonservices/` 全绿，其中：
+
+- `TestSignWebhookPayloadMatchesReceiverSide`：接收方视角独立重算签名，两份实现对得上
+  —— 自己验自己等于没验。
+- `TestSignWebhookPayloadBindsTimestamp` / `BindsBodyAndSecret`：三者任一变化签名必变。
+- `TestWebhookSignedPayloadAvoidsConcatAmbiguity`：`("1","23")` 与 `("12","3")` 不会撞成同一负载。
+- `TestPreSendCheckDeliversVerifiableSignature`：走真实 HTTP 投递，断言收到的头能验过实际 body，
+  且时间戳漂移在 ±5 分钟内。
+- `TestEventNotifyDeliversVerifiableSignature`：异步事件路径同规格。
+- `TestBuildWebhookHeadersSkipsSignatureWithoutSecret`：空 secret 不出签名头，但 `X-App-Key` 保留。
+
+未覆盖：PreSend 的 500ms 超时预算未做压力重测。HMAC-SHA256 对几十字节负载是微秒级开销，
+理论上不影响，但**没有实测数据，不作为结论**。
+
+### 原方案（保留存档）
 
 在三个投递点统一加两个头：
 
@@ -191,22 +215,21 @@ X-Webhook-Signature: hex(hmac_sha256(secret, timestamp + "." + rawBody))
 
 给出参考实现（Go 与 Node 各 10 行），写进给租户的接入文档。
 
-### 验收
-
-- 伪造请求（签名缺失或错误）被接收方拒绝；
-- 时间戳超 5 分钟的请求被拒绝；
-- 正常投递不受影响（PreSend 的 500ms 超时预算要重测，签名计算开销可忽略）。
+原定验收标准（伪造请求被拒、时间戳超 5 分钟被拒、正常投递不受影响）已由上面的测试覆盖；
+其中"正常投递不受影响"只验了功能，未做超时预算重测。
 
 ---
 
 ## 4. 排期建议
 
-| 顺序 | 事项 | 预估 | 前置条件 |
-| ---: | --- | --- | --- |
-| 1 | 管理台 v2 收紧监听 | 10 分钟 | 无 |
-| 2 | 管理台 v2 加 token | 半天 | 先处理引擎 WIP |
-| 3 | Webhook 签名 | 半天 | 无（文件不在 WIP 里） |
-| 4 | 消息搜索第一步 | 1–2 天 | 客户端同意接搜索页 |
-| 5 | 消息搜索第二步 | 2–3 天 | 数据量证明第一步不够用 |
+| 顺序 | 事项 | 预估 | 状态 | 前置条件 |
+| ---: | --- | --- | --- | --- |
+| 1 | 管理台 v2 收紧监听 | 10 分钟 | ✅ 2026-11-22 | 无 |
+| 2 | 管理台 v2 加 token | 半天 | ✅ 2026-11-22 | 原"引擎 WIP"阻塞已解除 |
+| 3 | Webhook 签名 | 半天 | ✅ 2026-11-22 | 无 |
+| 4 | 消息搜索第一步 | 1–2 天 | ⬜ 未开始 | 客户端同意接搜索页 |
+| 5 | 消息搜索第二步 | 2–3 天 | ⬜ 未开始 | 数据量证明第一步不够用 |
 
-第 1、3 项可以立刻做；第 2 项卡在"引擎 WIP 怎么处理"这个决定上；第 4 项卡在产品要不要做客户端。
+第 1–3 项已收口。第 4 项仍卡在同一件事上：**客户端仓库不在本工作区**
+（`routers/webim/` 是编译产物，真源码是另一个仓库的 `jugglechat-web`），
+所以"加搜索页"这一步现在做不了；服务端检索接口可以先做，但要先确认客户端愿意接。
