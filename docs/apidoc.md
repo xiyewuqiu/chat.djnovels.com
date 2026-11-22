@@ -2,9 +2,9 @@
 
 本文档根据当前仓库的路由、Handler、请求模型和 Service 实现整理，覆盖所有已注册的 HTTP 业务接口。
 
-- 主业务接口：95 个，统一使用 `/jim` 前缀。
+- 主业务接口：96 个，统一使用 `/jim` 前缀。
 - 助手回调接口：1 个，使用独立的 `/callback` 前缀和端口。
-- 合计：95 个 `method + path` 接口；另有 12 个内部接口（`/jim/internal/*`，服务密钥鉴权，不计入上述统计）。
+- 合计：96 个 `method + path` 接口；另有 12 个内部接口（`/jim/internal/*`，服务密钥鉴权，不计入上述统计）。
 - 文档反映当前代码行为；代码中没有显式实现的校验、权限或数据清理能力，不应视为接口保证。
 
 ## 1. 服务地址
@@ -238,9 +238,50 @@ request-id: <服务端生成的短 UUID>
 }
 ```
 
-## 5. 服务发现接口（3 个）
+## 5. 服务发现接口（4 个）
 
-### 5.1 查询服务信息
+### 5.1 查询平台能力清单
+
+```http
+GET /jim/capabilities
+```
+
+- 鉴权：**公开**（与 `serverinfos` 同级，不需要登录）。接入方在写死参数之前，可以先问一下平台。
+- 返回的都是公开契约参数，**不含任何租户数据或密钥**。
+- 值与代码常量同源：改常量时不会忘记改它。
+
+```json
+{
+  "code": 0,
+  "data": {
+    "platform":  {"name": "jugglechat-server", "api_prefix": "/jim"},
+    "retention": {"default_days": 7, "min_days": 1, "max_days": 30},
+    "tenant": {
+      "statuses":  [{"code": 0, "name": "normal"}, {"code": 1, "name": "blocked"}, {"code": 2, "name": "expired"}],
+      "key_types": [
+        {"name": "platform", "scope": "任意租户（配置项 serviceKey，只给运维）"},
+        {"name": "tenant",   "scope": "仅本租户 app_key（appexts.service_key，可下发给接入方）"}
+      ]
+    },
+    "keys": {
+      "rotate_scopes": ["secret", "secure_key", "both", "service_key"],
+      "rotate_both_covers": ["app_secret", "app_secure_key"]
+    },
+    "webhook": {
+      "signature_alg": "hex(hmac_sha256(app_secret, timestamp + \".\" + raw_body))",
+      "timestamp_header": "X-Webhook-Timestamp",
+      "signature_header": "X-Webhook-Signature",
+      "tolerance_millis": 300000
+    },
+    "purge": {"max_rows_per_call": 10000, "requires_disabled": true, "dry_run_supported": true}
+  }
+}
+```
+
+> 消息搜索的边界（候选上限、时间窗）在引擎侧，随引擎版本走，见
+> [`docs/message-search.zh-CN.md`](message-search.zh-CN.md)。
+
+### 5.2 查询服务信息
 
 ```http
 GET /jim/serverinfos
@@ -264,7 +305,7 @@ GET /jim/servers/info
 }
 ```
 
-### 5.2 查询服务列表
+### 5.3 查询服务列表
 
 ```http
 GET /jim/servers/list?limit=100&offset=
@@ -1508,7 +1549,7 @@ POST /callback/assistants/msgcallback
 
 | 模块 | 接口数 |
 | --- | ---: |
-| 服务发现 | 3 |
+| 服务发现 | 4 |
 | 登录与注册 | 14 |
 | 文件、翻译和同步 | 3 |
 | 用户 | 17 |
