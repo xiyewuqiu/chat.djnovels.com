@@ -5,7 +5,7 @@
 
 ---
 
-## 1. 引擎管理台 v2 无鉴权（P0，最高优先）
+## 1. 引擎管理台 v2 无鉴权（P0）—— 2026-11-22 已修复
 
 ### 现状证据
 
@@ -16,7 +16,26 @@
   —— 监听所有网卡。
 - 上游 console 自带的口令 + JWT 只保护 `consoleRouters.Route` 注册的那批路由，v2 绕过了它。
 
-### 方案（两刀，可分开上线）
+### 处置结果（2026-11-22 已落地）
+
+前置阻塞已消失：两个仓库工作区均干净、无 stash，**不需要再决定 WIP 去留**。两刀都做了：
+
+| 改动 | 文件 | 内容 |
+| --- | --- | --- |
+| 收紧监听 | `chatapi/commons/configures/configure.go` | `adminGateway` 新增 `bindAddr`；`GetAdminBindAddr()` 缺省返回 `127.0.0.1`，不再交给 gin 的 `:%d` |
+| 收紧监听 | `chatapi/services/admingateway/starter.go` | `Run` 改用可配置地址，启动日志打印真实监听地址 |
+| 加鉴权 | `chatapi/services/admingateway/apis/middleware.go`（新增） | `RequireAdminToken`：常量时间比较 `X-Admin-Token`，`adminSecret` 留空一律 503 |
+| 加鉴权 | `chatapi/services/admingateway/routers/router.go` | 整个 `/admingateway/v2` 路由组挂上中间件 |
+| 前端配合 | `chatapi/services/admingateway/routers/admin.html` | 右上角口令输入框 + 统一 `adminFetch` 包装 + 401/503 提示条 |
+
+测试（引擎仓库，`go test ./commons/configures ./services/admingateway/...` 全绿）：
+- `TestRequireAdminToken`：未配置 / 缺头 / 错值 / 前缀值 / 正确值 / 配置带空白，六种情形
+- `TestRouteV2RejectsRequestWithoutToken`：按生产方式装配 `RouteV2`，逐条断言 v2 路由确实被拦下
+  ——这条专防"中间件写对了但忘了挂"
+- `TestAdminDashboardIsReachable`：`/admin` 页面可匿名打开（不含数据），且包含口令提示
+- `TestGetAdminBindAddr`：缺省回环、空白回环、显式值原样返回
+
+### 原方案（保留存档）
 
 **第一刀：收紧监听（10 分钟，零代码风险）**
 
@@ -44,19 +63,32 @@ v2.Use(apis.RequireAdminToken)
 未配置 `adminSecret` 一律拒绝（安全默认值，与业务层 `ServiceAuth` 同一套路）。
 `admin.html` 增加一个输入框，把 token 存 `sessionStorage` 并在 fetch 时带上。
 
-### 验收
+### 验收（2026-11-22 起可执行）
 
 ```bash
-# 未带 token 必须 401/业务拒绝
-curl -s -X POST http://127.0.0.1:65109/admingateway/v2/apps/create -d '{}' -H 'Content-Type: application/json'
-# 从同网段另一台机器访问 65109 必须连不上
+# 1) 未带 token 必须 401
+curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:65109/admingateway/v2/apps/create \
+  -H 'Content-Type: application/json' -d '{}'
+# 期望 401
+
+# 2) 未配置 adminSecret 时必须 503（不是放行）
+#    这条在没填 adminSecret 的环境上直接可验；填了就会走第 1 条的分支
+
+# 3) 带正确 token 才会进入业务逻辑（用 {} 当入参，期望 400 参数错误而不是 401）
+curl -s -o /dev/null -w '%{http_code}\n' -X POST http://127.0.0.1:65109/admingateway/v2/apps/create \
+  -H 'Content-Type: application/json' -H "X-Admin-Token: $ADMIN_SECRET" -d '{}'
+# 期望 400（说明已通过鉴权，卡在参数校验）
+
+# 4) 从同网段另一台机器访问 65109 必须连不上（bindAddr 已收敛到回环）
 nc -zv <server-ip> 65109
 ```
 
-### 为什么本轮没做
+单元与接缝测试已随改动落地，见上方"处置结果"。
 
-`chatapi` 工作区有未提交的进行中改动，`router.go` 与 `starter.go` 都在改动清单里。
-现在动它，会把我的修改混进别人的 WIP 提交。**需要先决定：这批 WIP 是自己收尾提交，还是丢弃。**
+### 原阻塞原因（已解除，留档）
+
+`chatapi` 工作区当时有未提交的进行中改动，`router.go` 与 `starter.go` 都在改动清单里。
+2026-11-22 复核：两个仓库工作区均干净、无 stash 记录，该阻塞不再成立。
 
 ---
 

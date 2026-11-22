@@ -51,14 +51,23 @@ connectManager:
 navGateway:
   httpPort: 65102
 
-# 管理台：永远不要暴露到公网
+# 管理台：能力等同平台根权限（建租户、改策略、撤消息、导出审计），默认只监听回环。
+# bindAddr 留空时的取值是 127.0.0.1，不是 0.0.0.0：
+# gin 的 Run(":8090") 等价于监听所有网卡，这个默认值必须由代码兜住。
+# 运维要远程用时走 SSH 隧道：ssh -L 65109:127.0.0.1:65109 <server>
+# 绝对不要写成 0.0.0.0。
 adminGateway:
   httpPort: 65109
+  bindAddr: 127.0.0.1
 
-# 管理台 JWT 签名密钥。留空时引擎会用硬编码的默认值 jug9le1m
+# 管理台 JWT 签名密钥，兼作 /admingateway/v2/* 的 X-Admin-Token 校验值。
+# 留空时引擎会用硬编码的默认值 jug9le1m
 # （imserver-console@v1.0.10/apis/validate.go:91），等于任何人都能离线伪造管理台 token，必须设置。
 # 必须与数据库口令不同源：用 openssl rand -base64 32 单独生成，
 # 不要拿它复用 __DB_PASSWORD__。
+#
+# 注意：留空会让 /admingateway/v2/* 一律返回 503（本地改动的安全默认值），
+# 而不是"没配就放行"。上线前必须填。
 adminSecret: __ADMIN_SECRET__
 
 # 引擎内部调用自身 API 使用

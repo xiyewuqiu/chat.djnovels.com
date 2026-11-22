@@ -35,7 +35,7 @@
 | `im.djnovels.com` | 65103 | 客户端（经 Nginx） | 长连接、投递、群扇出、离线队列、推送 |
 | `im.djnovels.com` | 65101 | 业务层、运维 | 服务端 REST API |
 | `im.djnovels.com` | 65102 | 客户端 | 下发长连接地址 |
-| `im.djnovels.com` | 65109 | 运维 | 管理台（无强鉴权，永不暴露公网） |
+| `im.djnovels.com` | 65109 | 运维 | 管理台（v2 需 `X-Admin-Token`，默认只监听回环） |
 | `chat.djnovels.com` | 65110 | 客户端（经 Nginx） | 登录换 token、好友、群、会话、历史、文件凭证 |
 | `chat.djnovels.com` | 65111 | 引擎 | 事件回调 |
 
@@ -342,6 +342,18 @@ curl -s -X POST http://127.0.0.1:65109/admingateway/apps/create \
 
 管理台 65109 **不是免鉴权的**：先登录拿 `authorization`，再带着它调接口。
 
+> **两组路由、两套凭据，别混：**
+>
+> | 路由 | 凭据 | 说明 |
+> |---|---|---|
+> | `/admingateway/*` | 口令 + JWT，走 `Authorization` 头 | 上游 console 自带，见下面的登录流程 |
+> | `/admingateway/v2/*` | `X-Admin-Token` = `adminSecret` | 本地新增的运维接口（建租户、改策略、审计、撤回） |
+>
+> `adminSecret` 留空时 v2 一律返回 503，不会"没配就放行"。
+> `/admin` 中控台页面本身可匿名打开（不含数据），页面右上角的口令框填 `adminSecret`，
+> 口令只存 `sessionStorage`，关掉标签页即失效。
+> 远程登管理台不要开端口，走隧道：`ssh -L 65109:127.0.0.1:65109 <server>`，浏览器开 `http://127.0.0.1:65109/admin`。
+
 ```bash
 AUTH=$(curl -s -X POST http://127.0.0.1:65109/admingateway/login \
         -H 'Content-Type: application/json' \
@@ -477,11 +489,13 @@ mux.Handle("/jim/", ginEngine)
 2. **附件不受 7 天约束**：引擎不回收文件，必须在对象存储侧配生命周期（对象存储的接入见第 15 节）。
 3. **备份会延长实际保留期**：备份留 90 天，“7 天后删除”在备份里不成立。
 4. **单机上限**：开源版不支持多节点集群，扩容只能垂直向上。
-5. **管理台 65109 鉴权较弱**：只有口令 + JWT（密钥见 `adminSecret`），没有 MFA、没有 IP 限制；
-   本机已改掉默认口令并设置 `adminSecret`，仍需保证它永不暴露公网。
-6. **引擎全部端口都 bind 在 0.0.0.0**（上游把 `:%d` 写死在
-   `services/admingateway/starter.go:45` 等位置），无法改成只监听回环；
-   本机靠 ufw 只放行 80/443 兜底，**换服务器时必须核对防火墙**。
+5. **管理台 65109 已收敛为回环 + 双凭据，但仍无 MFA**：上游 console 那批路由走口令 + JWT；
+   本地新增的 `/admingateway/v2/*` 要求请求头 `X-Admin-Token` 等于 `adminSecret`，
+   且 `adminGateway.bindAddr` 缺省即 `127.0.0.1`（不再跟随 gin 的 `:%d` 监听全网卡）。
+   远程使用一律走 SSH 隧道，不要开公网端口。
+6. **引擎除管理台外的端口仍 bind 在 0.0.0.0**（上游把 `:%d` 写死在
+   `services/apigateway` 等位置），只有管理台是本地改造过的可配置监听；
+   其余端口本机靠 ufw 只放行 80/443 兜底，**换服务器时必须核对防火墙**。
    服务端 API（65101）额外配了 `apiGateway.ipWhitelist: [127.0.0.1]`，多一层应用级兜底。
    注意这条**只覆盖 65101**：`ipWhitelist` 挂在 API 网关的路由组上
    （`services/apigateway/routers/router.go:18`），而 65103 上的 `/jim/*` 走的是业务层自己的
