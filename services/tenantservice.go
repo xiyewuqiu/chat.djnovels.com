@@ -95,6 +95,10 @@ func CreateTenant(ctx context.Context, req *apimodels.CreateTenantReq) (errs.IME
 	}
 	appinfos.InvalidateAppInfoCache(appKey)
 
+	// 开通租户是平台级写操作：新增一个数据边界，事后必须能查到"谁开的、什么配置"。
+	RecordAdminAudit(ctx, req.OperatorId, dbmodels.AdminAuditAction_AppCreate, appKey,
+		"type="+strconv.Itoa(req.AppType)+",retention_days="+strconv.Itoa(days))
+
 	return errs.IMErrorCode_SUCCESS, &apimodels.CreateTenantResp{
 		AppKey:        appKey,
 		AppSecret:     appSecret,

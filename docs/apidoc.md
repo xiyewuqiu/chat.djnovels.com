@@ -1624,7 +1624,7 @@ POST /callback/assistants/msgcallback
 | `POST /jim/internal/users/ban` | 封禁账号 | `items:[{user_id,duration_seconds,ext}]`、`operator_id`；`duration_seconds` ≤0 为永久 |
 | `POST /jim/internal/users/unban` | 解除封禁 | `user_ids`、`operator_id` |
 | `GET /jim/internal/audits/list` | 管理操作审计 | Query：`action`（空=全部）、`limit`（默认 20，上限 100）、`offset` |
-| `POST /jim/internal/apps/create` | 开通租户 | `app_name`、`app_key`（可空，自动生成）、`app_type`、`retention_days`（1–30，缺省 7）；**响应含一次性 `service_key`** |
+| `POST /jim/internal/apps/create` | 开通租户 | `app_name`、`app_key`（可空，自动生成）、`app_type`、`retention_days`（1–30，缺省 7）、`operator_id`（写进审计）；**响应含一次性 `service_key`** |
 | `GET /jim/internal/apps/info` | 租户概览 | Query：`app_key`；不返回任何密钥 |
 | `POST /jim/internal/apps/status` | 启用/停用租户 | `app_key`、`app_status`（0 正常 / 1 封禁 / 2 过期）、`operator_id` |
 | `POST /jim/internal/apps/rotate` | 轮换密钥 | `app_key`、`scope`（secret / secure_key / both / **service_key**，缺省 secret）、`operator_id` |

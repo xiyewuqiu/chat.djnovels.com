@@ -7,6 +7,8 @@ type CreateTenantReq struct {
 	AppType int    `json:"app_type"`
 	// RetentionDays 消息保留天数，缺省 7，允许 1–30。
 	RetentionDays int `json:"retention_days"`
+	// OperatorId 是操作人标识，写进审计。开通租户是平台级写操作，必须留痕。
+	OperatorId string `json:"operator_id"`
 }
 
 // CreateTenantResp 只在创建时返回一次密钥，之后再查不到。
