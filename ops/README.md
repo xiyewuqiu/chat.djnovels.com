@@ -47,12 +47,12 @@
 2. 故障域不同：引擎重启会踢掉全部在线连接，业务层重启只是短暂 503。
 3. 扩容形态不同：引擎吃连接数与 CPU，业务层吃数据库 IO。
 
-引擎仓库必须保持与上游零差异（见第 11 节），这是唯一能长期低成本跟版的姿势。
+引擎原本的设计是保持与上游零差异。**2026-11-22 起改为「维护分支 + 选择性合并」**：
+本地已有大量自研能力，零差异不再现实。跟版的成本改由影响面说话，流程见第 11 节。
 
-> 现状更正（2026-11-22）：`chatapi.djnovels.com` 已不再与上游零差异——本地改动包括
-> 管理台 v2 及其鉴权、19 条 Modern IM 路由、webhook 引擎与签名等。工作区已收干净，
-> 无未提交改动。跟版前先读 `docs/feature-audit-2026-11.zh-CN.md` 第 6 节，
-> 不要按"纯上游"直接 rebase。
+> 现状（2026-11-22）：`chatapi.djnovels.com` 相对上游 `v1.8.16` 有本地独有 46 个文件、
+> 内容不同 42 个、上游独有 1 个（实测，工具 `ops/tools/upstream_diff.py`）。
+> 工作区已收干净、无未提交改动。跟版前先跑一次影响面，不要按"纯上游"直接 rebase。
 
 ---
 
@@ -556,17 +556,55 @@ git pull
 
 ### 跟上游
 
-上游真正开发的分支是 `dev`，不是 `master`。引擎仓库建议**直接 clone 上游**，天然零差异：
+### 跟上游（维护分支 + 选择性合并）
+
+> **2026-11-22 策略变更**：引擎仓库不再与上游零差异。上游是 8 万行代码、有自己的发布节奏，
+> 本地已有 46 个自研文件 + 42 个内容不同文件，旧口径「补丁数量控制在个位数」早已不可执行。
+> 现在的做法是：**本地是维护分支，上游更新按需合并**。能不能跟上，由影响面决定，不靠意志。
+
+#### 为什么不能直接 rebase
+
+本地仓库历史是重写过的，与上游**没有共同 commit**，`git log` / `git diff` 都用不上。
+所以跟版只能做**文件级对比**，工具是 `ops/tools/upstream_diff.py`。
+
+#### 流程
+
+**1) 拉上游目标版本**（用 tag，不要用浮动的 `dev` HEAD，否则每次基线都在动）：
 
 ```bash
-git -C /www/wwwroot/chat.djnovels.com/im.djnovels.com rev-list --count HEAD..origin/dev   # 落后
-git -C /www/wwwroot/chat.djnovels.com/im.djnovels.com rev-list --count origin/dev..HEAD   # 领先，必须是 0
-git -C /www/wwwroot/chat.djnovels.com/im.djnovels.com status --short                      # 必须是空
+git clone --depth 1 --branch v1.8.16 https://github.com/juggleim/im-server /tmp/upstream
 ```
 
-**铁律：引擎仓库的「领先」必须永远是 0，`git status` 必须永远是空。**
-运行期资产全部落在上游 `.gitignore` 已忽略的 `launcher/build/` 下，所以这条能一直成立。
-需要改引擎行为时先问业务层能不能做；必须改的，把 diff 存成补丁文件，每次升级重放，数量控制在个位数。
+**2) 算影响面**：
+
+```bash
+python3 ops/tools/upstream_diff.py \
+  --local ../im.djnovels.com --upstream /tmp/upstream \
+  --json /tmp/upstream-diff.json
+```
+
+输出三类，各自对应一个动作：
+
+| 类别 | 含义 | 跟版动作 |
+| --- | --- | --- |
+| 本地独有 | 自研功能，上游没有 | **保留**，合并时别被覆盖 |
+| 上游独有 | 我们落后了 | **补进来**；缺失可能意味着上游修过的问题我们还在踩 |
+| 内容不同 | 冲突面 | **逐个人工合并**，这才是主要工作量 |
+
+退出码 `1` 表示存在"上游独有"文件（即落后），`0` 表示没落后但仍有冲突面要合。
+
+**3) 按依赖顺序合并**：先 `commons/`（配置、错误码、`pbdefines`），再 `services/`，最后 `launcher/`。
+`pbdefines` 变了必须先重新生成 protobuf，否则编译期就会撞车。
+
+**4) 合并后必跑**：`go build ./...` → `go test ./...` → 第 8 节验收清单。
+
+**5) 记基线**：把"相对哪个 tag、三类各多少"写进 `docs/feature-audit-2026-11.zh-CN.md` §6。
+下次跟版从这里接着算，不靠记忆。
+
+#### 2026-11-22 基线
+
+相对 **`v1.8.16`**：本地独有 **46**、上游独有 **1**（`services/apigateway/models/chrmmodels.go`）、
+内容不同 **42**。上游那个文件目前无人引用，不影响编译，跟版时一并带上即可。
 
 升级顺序：拉代码 → 重新生成并执行 `03-business-compat.sql` → 两个 `build.sh` → 过第 8 节验收清单。
 
