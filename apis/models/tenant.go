@@ -31,3 +31,19 @@ type TenantInfo struct {
 	RetentionDays int    `json:"retention_days"`
 	CreatedTime   int64  `json:"created_time"`
 }
+
+// TenantTableCount 是某租户在一张表里的行数。
+type TenantTableCount struct {
+	TableName string `json:"table_name"`
+	RowCount  int64  `json:"row_count"`
+}
+
+// TenantInventoryResp 是租户数据分布清单（干跑）。
+//
+// 只统计行数，不返回任何消息正文，也不删除任何数据。
+// 行数为 0 的表不出现——清单是用来"看清体量"的，不是数据库字典。
+type TenantInventoryResp struct {
+	AppKey    string             `json:"app_key"`
+	Tables    []TenantTableCount `json:"tables"`
+	TotalRows int64              `json:"total_rows"`
+}

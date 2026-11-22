@@ -64,3 +64,16 @@ func InternalRotateTenantKeys(ctx *gin.Context) {
 	}
 	responses.SuccessHttpResp(ctx, resp)
 }
+
+// InternalTenantInventory 租户数据分布干跑（服务密钥）。只统计，不删除任何数据。
+//
+// 这是"清理一个租户"的前置步骤：先看清它在哪些表里有多少行，
+// 确认是目标租户、确认没有意外的巨表，再决定下一步。
+func InternalTenantInventory(ctx *gin.Context) {
+	code, resp := services.TenantDataInventory(ctxs.ToCtx(ctx), ctx.Query("app_key"))
+	if code != errs.IMErrorCode_SUCCESS {
+		responses.ErrorHttpResp(ctx, code)
+		return
+	}
+	responses.SuccessHttpResp(ctx, resp)
+}

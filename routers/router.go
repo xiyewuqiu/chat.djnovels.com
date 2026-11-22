@@ -144,6 +144,7 @@ func Route(eng *gin.Engine, prefix string) *gin.RouterGroup {
 	internalGroup.GET("/apps/info", apis.InternalGetTenant)
 	internalGroup.POST("/apps/status", apis.InternalUpdateTenantStatus)
 	internalGroup.POST("/apps/rotate", apis.InternalRotateTenantKeys)
+	internalGroup.GET("/apps/inventory", apis.InternalTenantInventory)
 	return group
 }
 

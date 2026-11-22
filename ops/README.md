@@ -447,6 +447,32 @@ curl -s -X POST http://127.0.0.1:65110/jim/internal/token \
 2. `scope=service_key` 轮换后旧密钥立刻失效（走缓存主动失效，不用重启进程）。
 3. `scope=both` **不含** service_key，只换 `app_secret` 与 `app_secure_key`——口径保持"两者"。
 
+### 清退一个租户之前：先干跑
+
+删除租户不可逆，**先看清体量再动手**。两种方式，结果一致（都只读）：
+
+```bash
+# 方式一：SQL 脚本，直接在库上跑
+mysql -uroot -p im_db -e "SET @app_key='dz'; source ops/sql/tenant-inventory.sql"
+
+# 方式二：内部接口，供平台后台/自动化调用
+curl -s "http://127.0.0.1:65110/jim/internal/apps/inventory?app_key=dz" \
+  -H "X-Service-Key: $PLATFORM_SERVICE_KEY" -H 'appkey: platform'
+```
+
+返回「表名 + 该租户的行数」，按行数降序，行数为 0 的表不列出。
+表清单由 `information_schema` 动态发现（所有带 `app_key` 列的表），不硬编码——
+引擎与业务层共用一个库、上百张表，手写清单一定会漏，漏一张就等于"以为删干净了"。
+
+干跑之后必须人工确认三件事，再谈清理：
+
+1. **这是不是要动的那个租户**：`app_key` 看错一个字符，清的就是别人。
+2. **有没有意外的巨表**：比如 `p_hismsgs` 行数远超预期，说明还有活跃流量。
+3. **该租户是否已停用**（`app_status != 0`）：停用后新登录被拒，存量会话仍可能在线。
+
+> 目前**只提供干跑，没有一键物理删除**。真删除要分批、可回滚、带审计，
+> 在没有真实库验证过的环境里写这种代码等于埋雷。也不要绕过平台手工改库。
+
 ---
 
 ## 10. 两个 schema 的列差异（必须知道）

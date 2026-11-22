@@ -1561,6 +1561,7 @@ POST /callback/assistants/msgcallback
 | `GET /jim/internal/apps/info` | 租户概览 | Query：`app_key`；不返回任何密钥 |
 | `POST /jim/internal/apps/status` | 启用/停用租户 | `app_key`、`app_status`（0 正常 / 1 封禁 / 2 过期）、`operator_id` |
 | `POST /jim/internal/apps/rotate` | 轮换密钥 | `app_key`、`scope`（secret / secure_key / both / **service_key**，缺省 secret）、`operator_id` |
+| `GET /jim/internal/apps/inventory` | **租户数据分布干跑**（只统计、不删除） | Query：`app_key`；返回各表行数（按行数降序）与总行数；表清单由 `information_schema` 动态发现 |
 
 `scope=both` 只换 `app_secret` 与 `app_secure_key`，**不含** `service_key`。
 

@@ -35,6 +35,7 @@ func TestFeatureRoutesAreRegistered(t *testing.T) {
 		"GET /jim/internal/apps/info",
 		"POST /jim/internal/apps/status",
 		"POST /jim/internal/apps/rotate",
+		"GET /jim/internal/apps/inventory",
 		"POST /jim/login",
 		"POST /jim/sms/send",
 		"POST /jim/groups/mygroups/search",
