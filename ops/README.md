@@ -285,6 +285,46 @@ location /      { return 404; }                                # 其余一律拒
 | 12 | 引擎域名收敛 | `nginx -T \| grep -A3 'server_name im.djnovels.com'` + `curl -s -o /dev/null -w '%{http_code}' https://im.djnovels.com/jim/serverinfos?no=100000` | 配置里只有一个 `server_name im.djnovels.com`，且 curl 返回 `404`（业务 API 只能从 chat 域名进） |
 | 13 | 端口暴露 | `ufw status` | 只有 80/443，没有 6510x/6511x |
 | 14 | 日志 | `pm2 logs --lines 50` | 没有 panic / `Unknown column` / `Access denied` |
+| 15 | 2026-11 这批改动 | `python3 ops/tools/verify_deploy.py ...`（见下方「本轮改动的验收脚本」） | 末行 `✅ 全部通过`；其中「租户密钥越界必须被拒绝」**必须是 ✅** |
+
+### 本轮改动的验收脚本
+
+第 15 项对应的是 2026-11 这批改动（管理台鉴权、租户级服务密钥、数据清单）。
+一条命令逐条验，只读，不改配置也不写业务数据：
+
+```bash
+cd /www/wwwroot/chat.djnovels.com/chat.djnovels.com
+SERVICE_KEY=$(grep -A1 '^serviceKey' conf/config.yml | tail -1 | awk '{print $2}')
+TENANT_SERVICE_KEY=<从建租户响应里拿到的 service_key>
+
+python3 ops/tools/verify_deploy.py \
+  --appkey dz \
+  --platform-key "$SERVICE_KEY" \
+  --tenant-key "$TENANT_SERVICE_KEY" \
+  --other-appkey <另一个租户的 app_key> \
+  --admin-secret "$ADMIN_SECRET"
+```
+
+判定标准：
+
+| 断言 | 失败意味着什么 |
+| --- | --- |
+| 管理台 v2 无凭据必须被拒绝 | v2 鉴权中间件没挂上，**P0 回归** |
+| 管理台 v2 正确凭据放行 | `adminSecret` 与脚本传的不一致，或服务没重启 |
+| 内部接口无凭据必须被拒绝 | 服务密钥留空时被放行，安全默认值失效 |
+| 租户密钥可作用于本租户 | 该租户还没执行 `scope=service_key` 补发，或缓存没失效 |
+| **租户密钥越界必须被拒绝** | **多租户隔离没生效**——这条一旦为 ❌，先停掉对外暴露再排查 `apis/serviceauth.go` |
+| 租户数据清单可用 | 新接口没部署，或 `information_schema` 查询失败 |
+
+脚本本身有自测（用假接口验证每条断言会不会判错），改脚本后先跑：
+
+```bash
+python3 ops/tools/test_verify_deploy.py     # 4 项，应全 ok
+```
+
+保留期（消息超期不可读）和 webhook 签名不在脚本里：前者需要 8 天前的历史数据，
+后者需要改租户 webhook 配置（写操作）。两项的手工步骤见第 13 节与 `docs/webhook-signature.zh-CN.md`。
+
 
 ### 长连接握手怎么验
 

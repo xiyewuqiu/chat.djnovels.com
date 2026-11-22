@@ -26,3 +26,7 @@ chat.djnovels.com.new
 
 # 宝塔面板在站点根生成的空配置（本机用 Nginx，它不生效）
 .htaccess
+
+# ops/tools 下的 Python 工具会产生字节码缓存
+__pycache__/
+*.pyc
