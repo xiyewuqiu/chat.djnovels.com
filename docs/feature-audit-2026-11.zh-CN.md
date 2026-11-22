@@ -101,6 +101,8 @@
 | **服务密钥全局一把、租户可互相越权** | ✅ 已修（2026-11-22：租户级 `service_key`） | §4.18 |
 | **保留期只到数据库、读路径不设下界** | ✅ 已修（2026-11-22：`RetentionFloor` 并入 `cleanTime`） | §4.19 |
 | **租户清退：看不清体量、无删除手段** | 🟡 干跑已就绪（2026-11-22）；物理删除未做 | §4.20 |
+| **API 路径 webhook 从未生效** | ✅ 已修（2026-11-22：appKey 取值为空） | §4.21 |
+| **apiGateway.ipWhitelist 只存在于文档** | ✅ 已补（2026-11-22） | §4.21 |
 | 多进程限流共享 | ⚠️ 已知限制 | 单进程部署成立，多进程需换 Redis |
 | 附件配额与对象存储 TTL | ⚠️ 待办 | 运维侧策略，非代码缺陷 |
 
@@ -375,6 +377,42 @@
    测试库上跑一遍 `tenant-inventory.sql`，确认动态 SQL 拼装正常、结果与预期一致。
 3. 清单只统计"带 `app_key` 列的表"。若有表按 `app_key` 之外的方式分区（如按用户 ID），
    不在此清单内，清理时需另行核对。
+
+### 4.21 真机验证发现的两个问题（2026-11-22）
+
+用免安装 MariaDB + 真实引擎进程（`launcher/main.go`，单进程起 19 个服务）跑验证时暴露：
+
+**一、服务端 API 的 webhook 从未生效（功能性缺失）**
+
+`bases.GetAppKeyFromCtx` 签名是 `func(ctx context.Context)`，但 handler 传的是 `*gin.Context`。
+gin 的 `Context.Value` 只对 **string 类型**的 key 查 `c.Keys`，而 `bases.CtxKey_AppKey` 是自定义类型，
+断言失败后退到 request context —— 结果永远是空串。
+
+后果链：`PreSendCheck(ctx, appKey="", ...)` → `GetAppInfo("")` 查不到租户 → **直接放行、不投递**。
+发送后通知（`PostSendNotify`）同理。也就是说：**凡是通过 `/apigateway/messages/*` 发的消息，
+发送前拦截与发送后通知这两类 webhook 一次都没执行过。**
+
+之所以长期没被发现：消息本身没受影响——`ToRpcCtx` 用的是 `GetCtxString(ginCtx, string(CtxKey_AppKey))`，
+用 string 查上下文，所以 `app_key` 存得是对的。只有 webhook 那两行拿了空值。
+
+修法：15 处调用（全在本地自研的 handler 里）改用 `services.GetAppkeyFromCtx`，内部用 string key 查。
+
+**验证**：修复前触发发送 → 接收端 0 次；修复后 → 捕获到 PreSend 投递。
+用 Python 独立复算 `hex(hmac_sha256(app_secret, timestamp + "." + raw_body))`，
+与引擎发出的签名完全一致；把 body 里的一个词改掉后，签名校验正确地失败。
+
+**二、`apiGateway.ipWhitelist` 只存在于文档**
+
+`ops/README` 第 13 节写着"65101 额外配了 `apiGateway.ipWhitelist`，多一层应用级兜底"
+并引用了 `services/apigateway/routers/router.go:18`，但代码里**没有这个实现**，
+`configures` 里也没有对应字段。运维按文档理解会以为有防护，实际只有防火墙。
+
+已补：`ApiGateway.IpWhitelist` 配置项 + `IpWhitelist` 中间件，挂在签名中间件之前。
+中间件取 `RemoteAddr` 而非 gin 的 `ClientIP()`——后者优先读 `X-Forwarded-For`，
+这条链路上没有可信代理，信它可以被伪造请求头直接绕过。
+
+**验证**：本机 `10.3.249.135` 访问 65101 返回 403；回环放行；单测 5 项
+（含"伪造 X-Forwarded-For 不能绕过"）。
 
 ---
 

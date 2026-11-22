@@ -668,9 +668,11 @@ mux.Handle("/jim/", ginEngine)
 6. **引擎除管理台外的端口仍 bind 在 0.0.0.0**（上游把 `:%d` 写死在
    `services/apigateway` 等位置），只有管理台是本地改造过的可配置监听；
    其余端口本机靠 ufw 只放行 80/443 兜底，**换服务器时必须核对防火墙**。
-   服务端 API（65101）额外配了 `apiGateway.ipWhitelist: [127.0.0.1]`，多一层应用级兜底。
+   服务端 API（65101）额外配了 `apiGateway.ipWhitelist: [127.0.0.1]`，多一层应用级兜底
+（2026-11-22 补齐：此前文档写了但代码没有实现）。白名单为空表示不启用；
+中间件取 `RemoteAddr` 而非 `ClientIP()`，伪造 `X-Forwarded-For` 绕不过去。
    注意这条**只覆盖 65101**：`ipWhitelist` 挂在 API 网关的路由组上
-   （`services/apigateway/routers/router.go:18`），而 65103 上的 `/jim/*` 走的是业务层自己的
+   （`services/apigateway/routers/router.go` 的 `Route` 开头），而 65103 上的 `/jim/*` 走的是业务层自己的
    gin，只有 appkey + token 校验，**没有 IP 白名单**。65103 的收敛只能靠 Nginx 的 vhost。
 7. **固定测试验证码默认关闭**：`security.allow_fixed_verify_code` 不写即为 `false`，
    此时 `000000` 与错误验证码同等待遇。曾经依赖它做联调的环境要显式打开，

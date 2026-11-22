@@ -142,30 +142,86 @@ python ops/tools/verify_deploy.py `
 
 ---
 
-## 6. 这次验证覆盖了什么、没覆盖什么
+## 6. 引擎侧验证（2026-11-22 补充）
 
-**已真实验证**：
+引擎不是 21 个独立进程——`launcher/main.go` 会在**一个进程里**启动全部服务（19 个 Manager）。
+所以本机同样能起：
 
-- 业务层能连库启动、跑完整 HTTP 链路
+```powershell
+# 同一个库：把引擎 schema 也导进去（同样替换 collation）
+$sql = Get-Content ..\chatapi.djnovels.com\sql\imserver.sql -Raw -Encoding UTF8
+Set-Content "$env:TEMP\engine-schema-test.sql" -Value ($sql -replace 'utf8mb4_0900_ai_ci','utf8mb4_unicode_ci') -Encoding UTF8 -NoNewline
+Get-Content "$env:TEMP\engine-schema-test.sql" -Raw | & $cli --host=127.0.0.1 --port=3307 --user=root im_db
+
+# 跳过引擎迁移
+& $cli --host=127.0.0.1 --port=3307 --user=root im_db -e "INSERT INTO globalconfs (conf_key,conf_value) VALUES ('jimdb_version','99999999') ON DUPLICATE KEY UPDATE conf_value=VALUES(conf_value);"
+
+# 编译到临时目录（不要把 exe 丢进仓库）
+go build -o "$env:TEMP\engine-verify\engine.exe" ..\chatapi.djnovels.com\launcher
+```
+
+配置是一份**合并文件**：引擎的 `configures` 与内嵌 jugglechat 的 `jimConfigures` 都读
+`conf/config.yml`（业务层那边是硬编码相对路径），YAML 解析会忽略对方不认识的字段，所以能共用。
+关键点：`msgStoreEngine: mysql`、`apiGateway.ipWhitelist`、`adminGateway.bindAddr: 127.0.0.1`、
+外加业务层的 `serviceKey` 与 `security`。
+
+### 实测结果
+
+| 检查 | 结果 |
+| --- | --- |
+| 端口监听 | 65101/65102/65103 在 `::`（上游写死）；**65109 在 `127.0.0.1`**（bindAddr 生效） |
+| 管理台 v2 无凭据 / 错凭据 / 对凭据 | 401 / 401 / 200 |
+| `ipWhitelist`：从 `10.3.249.135` 访问 65101 | 403（回环放行） |
+| 搜索：无签名 / 关键词 1 字 / 合法 | 10004 / 12004 / code=0 |
+| 搜索命中 | 发消息后搜"书单"，命中 1 条，摘要正确 |
+| **保留期** | 把一条消息的 `send_time` 改成 8 天前，再搜同一关键词 → `scanned` 仍为 2，过期那条没进候选 |
+| **webhook 签名** | 捕获到 PreSend 投递；Python 独立复算签名一致；篡改 body 后校验失败 |
+
+### 这次暴露的两个真 bug
+
+1. **API 路径的 webhook 从未生效**：`bases.GetAppKeyFromCtx(ginCtx)` 永远返回空串
+   （gin 的 `Value` 只认 string key，`CtxKey` 是自定义类型），导致 `PreSendCheck` 拿不到租户配置、
+   直接放行。已修（15 处改用 `services.GetAppkeyFromCtx`）。
+2. **`apiGateway.ipWhitelist` 只存在于文档**：配置项与实现都没有。已补。
+
+详见 `docs/feature-audit-2026-11.zh-CN.md` §4.21。
+
+### 仍然没验证的
+
+- 真实 MySQL 8 的 collation / 排序语义（本机用 MariaDB + `utf8mb4_unicode_ci`）
+- 内嵌迁移脚本 `sqls/*.sql`（为绕开 collation 被跳过）
+- 长连接（WebSocket）链路：本次只验证了 HTTP 侧
+- 对象存储、推送、RTC 等外部依赖
+
+---
+
+## 7. 覆盖范围汇总
+
+**业务层已真实验证**：
+
+- 能连库启动、跑完整 HTTP 链路
 - 租户开通 / 查询 / 数据清单 / 密钥轮换
 - **租户级服务密钥的隔离**：租户 A 的钥匙打不开租户 B 的门
 - `tenant-inventory.sql` 的动态 SQL 拼装与转义
 
-**没验证（受限于环境）**：
+**引擎侧已真实验证**（见第 6 节）：管理台 v2 鉴权、`ipWhitelist`、消息搜索（含命中与摘要）、
+保留期读路径、webhook 签名（投递 + 独立验签 + 防篡改）。
+
+**仍然没验证的**：
 
 | 项目 | 原因 | 怎么补 |
 | --- | --- | --- |
-| 引擎侧全部能力（管理台鉴权、webhook 签名、保留期、消息搜索） | 引擎是 21 个微服务，本地没起 | 在服务器上跑 `verify_deploy.py`（带上 `--im-api`） |
-| 内嵌迁移脚本 `sqls/*.sql` | 为跳过 collation 问题被跳过了 | 生产升级时才会执行，需在真 MySQL 8 上验 |
-| collation 差异带来的排序/大小写语义 | 用的是 `utf8mb4_unicode_ci` | 生产是 `utf8mb4_0900_ai_ci`，搜索/排序的边界行为可能不同 |
-| 消息搜索的端到端 | 需要引擎 | 服务器上验 |
+| 真实 MySQL 8 的 collation / 排序语义 | 本机用 MariaDB + `utf8mb4_unicode_ci` | 生产环境抽样对比 |
+| 内嵌迁移脚本 `sqls/*.sql`（两个仓库各一套） | 为绕开 collation 被跳过 | 生产升级时才会执行，需在真 MySQL 8 上验 |
+| 长连接（WebSocket）链路 | 本次只验证 HTTP 侧 | `python3 ops/tools/im_e2e.py` |
+| 对象存储 / 推送 / RTC | 依赖外部服务 | 上线后按第 8 节验收清单 |
 
-> **不要把这份本地验证当成"上线验收"**。它证明的是"业务层逻辑是对的"，
-> 不是"整套部署是对的"。上线前仍需按 `ops/README.md` 第 8 节跑一遍。
+> **不要把这份本地验证当成"上线验收"**。它证明的是"业务逻辑是对的"，
+> 不是"整套部署是对的"——尤其是 Nginx、证书、防火墙、PM2 这些只在服务器上成立的环节。
 
 ---
 
-## 7. 清理
+## 8. 清理
 
 ```powershell
 Get-Process local-verify-server -ErrorAction SilentlyContinue | Stop-Process -Force
