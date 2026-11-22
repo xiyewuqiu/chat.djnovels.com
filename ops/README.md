@@ -499,31 +499,80 @@ curl -s -X POST http://127.0.0.1:65110/jim/internal/token \
 2. `scope=service_key` 轮换后旧密钥立刻失效（走缓存主动失效，不用重启进程）。
 3. `scope=both` **不含** service_key，只换 `app_secret` 与 `app_secure_key`——口径保持"两者"。
 
-### 清退一个租户之前：先干跑
+### 清退一个租户：先干跑，再删除
 
-删除租户不可逆，**先看清体量再动手**。两种方式，结果一致（都只读）：
+删除租户**不可逆**。流程固定三步，别跳步。
+
+#### 第 1 步：看清体量（干跑，只读）
 
 ```bash
 # 方式一：SQL 脚本，直接在库上跑
 mysql -uroot -p im_db -e "SET @app_key='dz'; source ops/sql/tenant-inventory.sql"
 
-# 方式二：内部接口，供平台后台/自动化调用
-curl -s "http://127.0.0.1:65110/jim/internal/apps/inventory?app_key=dz" \
-  -H "X-Service-Key: $PLATFORM_SERVICE_KEY" -H 'appkey: platform'
+# 方式二：内部接口（推荐，与第 2 步同一条链路）
+curl -s -X POST "http://127.0.0.1:65110/jim/internal/apps/purge" \
+  -H "X-Service-Key: $PLATFORM_SERVICE_KEY" -H 'appkey: platform' \
+  -H 'Content-Type: application/json' \
+  -d '{"app_key":"dz","confirm_app_key":"dz","dry_run":true}'
 ```
 
-返回「表名 + 该租户的行数」，按行数降序，行数为 0 的表不列出。
-表清单由 `information_schema` 动态发现（所有带 `app_key` 列的表），不硬编码——
-引擎与业务层共用一个库、上百张表，手写清单一定会漏，漏一张就等于"以为删干净了"。
+返回「表名 + 行数」与 `processed_rows`。表清单由 `information_schema` 动态发现
+（所有带 `app_key` 列的表），不硬编码——上百张表靠手写清单一定漏。
 
-干跑之后必须人工确认三件事，再谈清理：
+必须人工确认三件事：
 
 1. **这是不是要动的那个租户**：`app_key` 看错一个字符，清的就是别人。
 2. **有没有意外的巨表**：比如 `p_hismsgs` 行数远超预期，说明还有活跃流量。
-3. **该租户是否已停用**（`app_status != 0`）：停用后新登录被拒，存量会话仍可能在线。
+3. **该租户是否已停用**——没停用的话第 2 步会直接拒绝。
 
-> 目前**只提供干跑，没有一键物理删除**。真删除要分批、可回滚、带审计，
-> 在没有真实库验证过的环境里写这种代码等于埋雷。也不要绕过平台手工改库。
+#### 第 2 步：停用
+
+```bash
+curl -s -X POST "http://127.0.0.1:65110/jim/internal/apps/status" \
+  -H "X-Service-Key: $PLATFORM_SERVICE_KEY" -H 'appkey: platform' \
+  -H 'Content-Type: application/json' \
+  -d '{"app_key":"dz","app_status":1,"operator_id":"ops"}'
+```
+
+**必须先停用**：活跃租户的数据删一半，比不删更糟。没停用就调清退，返回 `17021`。
+
+#### 第 3 步：清退（真删）
+
+```bash
+curl -s -X POST "http://127.0.0.1:65110/jim/internal/apps/purge" \
+  -H "X-Service-Key: $PLATFORM_SERVICE_KEY" -H 'appkey: platform' \
+  -H 'Content-Type: application/json' \
+  -d '{"app_key":"dz","confirm_app_key":"dz","dry_run":false,"operator_id":"ops"}'
+```
+
+返回值关键字段：
+
+| 字段 | 含义 |
+| --- | --- |
+| `processed_rows` | 本次处理的行数 |
+| `remaining_rows` | **大于 0 表示没删完**，需要再调一次同样的请求 |
+| `purged` | `true` 表示租户本体（`apps` 行）已删除，**不可再恢复** |
+
+**单次最多删 10000 行**（每批 1000）。大租户要连着调几次，直到 `remaining_rows=0`：
+
+```bash
+while true; do
+  R=$(curl -s -X POST .../apps/purge -d '{"app_key":"dz","confirm_app_key":"dz"}')
+  echo "$R" | grep -q '"purged":true' && break
+  sleep 1
+done
+```
+
+#### 删除顺序与安全边界
+
+- 先业务数据 → 再 `appexts` → **最后 `apps`**。反过来会出现"租户没了、数据还在"，
+  既查不到也清不掉。
+- 中途失败不会回滚已删部分，但**租户本体还在**，排查完原因可以继续调。
+- 每次完成都有审计：`admin_audits.action = app.purge`，`target` 是被删租户，
+  `detail` 形如 `purged,processed=820,remaining=0`——**`remaining=0` 才能证明真清干净了**。
+
+> **清退前务必有数据库备份。** 这个操作没有撤销按钮。
+> 也不要绕过平台手工改库：那样既没有审计，也会漏表。
 
 ---
 
