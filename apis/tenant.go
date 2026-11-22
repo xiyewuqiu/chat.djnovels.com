@@ -77,3 +77,22 @@ func InternalTenantInventory(ctx *gin.Context) {
 	}
 	responses.SuccessHttpResp(ctx, resp)
 }
+
+// InternalPurgeTenant 清退租户：物理删除它在库里的全部数据，最后删租户本体。
+//
+// 不可逆。三条前置：confirm_app_key 必须与 app_key 一致、租户必须已停用、
+// dry_run=true 时只统计不删。单次最多删 10000 行，没删完返回 remaining_rows，
+// 需要再调一次——大租户不会把一次请求拖到超时。
+func InternalPurgeTenant(ctx *gin.Context) {
+	req := &models.PurgeTenantReq{}
+	if err := ctx.BindJSON(req); err != nil {
+		responses.ErrorHttpResp(ctx, errs.IMErrorCode_APP_REQ_BODY_ILLEGAL)
+		return
+	}
+	code, resp := services.PurgeTenant(ctxs.ToCtx(ctx), req)
+	if code != errs.IMErrorCode_SUCCESS {
+		responses.ErrorHttpResp(ctx, code)
+		return
+	}
+	responses.SuccessHttpResp(ctx, resp)
+}

@@ -33,6 +33,9 @@ var (
 	IMErrorCode_APP_FORBIDDEN           IMErrorCode = 17018
 	IMErrorCode_APP_RATE_LIMITED        IMErrorCode = 17019
 	IMErrorCode_APP_EXISTED             IMErrorCode = 17020
+	// IMErrorCode_APP_PURGE_BLOCKED 表示要清退的租户还没停用。
+	// 单独一个码而不复用参数非法：运维看到提示才知道下一步该先做停用。
+	IMErrorCode_APP_PURGE_BLOCKED IMErrorCode = 17021
 
 	//friends
 	IMErrorCode_APP_FRIEND_DEFAULT         IMErrorCode = 17100
@@ -62,7 +65,8 @@ var imCode2ApiErrorMap map[IMErrorCode]*ApiErrorMsg = map[IMErrorCode]*ApiErrorM
 	//api
 	// 限流沿用项目约定：HTTP 200 + 业务码，客户端只需检查 code。
 	IMErrorCode_SUCCESS:          newApiErrorMsg(200, IMErrorCode_SUCCESS, "success"),
-	IMErrorCode_APP_RATE_LIMITED: newApiErrorMsg(200, IMErrorCode_APP_RATE_LIMITED, "too many requests, retry later"),
+	IMErrorCode_APP_RATE_LIMITED:  newApiErrorMsg(200, IMErrorCode_APP_RATE_LIMITED, "too many requests, retry later"),
+	IMErrorCode_APP_PURGE_BLOCKED: newApiErrorMsg(200, IMErrorCode_APP_PURGE_BLOCKED, "tenant must be disabled before purge"),
 	IMErrorCode_APP_EXISTED:      newApiErrorMsg(200, IMErrorCode_APP_EXISTED, "app already exists"),
 }
 

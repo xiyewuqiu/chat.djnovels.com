@@ -12,6 +12,8 @@ const (
 	AdminAuditAction_InternalToken = "internal.token"
 	AdminAuditAction_AppStatus     = "app.status"
 	AdminAuditAction_AppRotate     = "app.rotate"
+	// AdminAuditAction_AppPurge 是租户清退（物理删除数据）。不可逆，必须留痕。
+	AdminAuditAction_AppPurge = "app.purge"
 )
 
 type AdminAudit struct {

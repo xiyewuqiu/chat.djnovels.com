@@ -47,3 +47,29 @@ type TenantInventoryResp struct {
 	Tables    []TenantTableCount `json:"tables"`
 	TotalRows int64              `json:"total_rows"`
 }
+
+// PurgeTenantReq 清退一个租户：删除它在库里的全部数据，最后删租户本体。
+//
+// ConfirmAppKey 必须与 AppKey 完全一致——这是防手滑的二次确认，
+// 不是形式主义：删错一个字符，清掉的就是别人的租户。
+type PurgeTenantReq struct {
+	AppKey        string `json:"app_key"`
+	ConfirmAppKey string `json:"confirm_app_key"`
+	OperatorId    string `json:"operator_id"`
+	// DryRun 为 true 时只统计不删除，用于删除前最后一次核对。
+	DryRun bool `json:"dry_run"`
+}
+
+// PurgeTenantResp 是清退结果。
+type PurgeTenantResp struct {
+	AppKey string `json:"app_key"`
+	DryRun bool   `json:"dry_run"`
+	// Tables 是本次成功处理的表与行数；dry_run 时是"将要删多少"。
+	Tables []TenantTableCount `json:"tables"`
+	// ProcessedRows 是本次处理的总行数。
+	ProcessedRows int64 `json:"processed_rows"`
+	// RemainingRows 大于 0 表示本次没删完（受单次上限约束），需要再调一次。
+	RemainingRows int64 `json:"remaining_rows"`
+	// Purged 为 true 表示租户本体（apps 行）已经被删除，不可再恢复。
+	Purged bool `json:"purged"`
+}
