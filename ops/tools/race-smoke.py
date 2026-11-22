@@ -34,7 +34,7 @@ import urllib.request
 stop = threading.Event()
 # timeout 单独计数：race detector 会让引擎慢 2–5 倍，压测里超时很正常，
 # 把它和"真的出错"混在一起会导致误判。
-stats = {"ok": 0, "fail": 0, "timeout": 0, "rate_limited": 0, "hist_ok": 0, "search_hits": 0}
+stats = {"ok": 0, "fail": 0, "timeout": 0, "rate_limited": 0, "hist_ok": 0, "markread_ok": 0, "search_hits": 0}
 stats_lock = threading.Lock()
 
 
@@ -105,8 +105,13 @@ def worker(index, args):
         }
         resp = post(base + "/apigateway/messages/private/send", body, headers)
         code = resp.get("code")
+        last_msg_id = ""
         if code == 0:
             bump("ok")
+            # 发送响应形如 {"data":[{"target_id":"...","msg_id":"..."}]}
+            data = resp.get("data")
+            if isinstance(data, list) and data:
+                last_msg_id = data[0].get("msg_id", "") or ""
         elif code == -2:
             bump("timeout")
         else:
@@ -124,6 +129,25 @@ def worker(index, args):
             if hcode == 0:
                 bump("hist_ok")
             elif hcode == -2:
+                bump("timeout")
+            else:
+                bump("fail")
+
+        # 已读上报：走 read receipt 的写路径（异步 RPC + 更新 is_read）。
+        # msg_id 用不存在的值没关系——压的是代码路径与锁，不是数据效果。
+        if round_no % 10 == 0 and last_msg_id:
+            # 用刚发出去的真实 msg_id：这样才会走到真正的 UPDATE，
+            # 假 id 只会命中"影响 0 行"的路径，压不到实际更新。
+            mr = post(base + "/apigateway/messages/markread", {
+                "user_id": "race-u%d" % index,
+                "target_id": "race-peer",
+                "channel_type": 1,
+                "msg_ids": [last_msg_id],
+            }, headers)
+            mr_code = mr.get("code")
+            if mr_code == 0:
+                bump("markread_ok")
+            elif mr_code == -2:
                 bump("timeout")
             else:
                 bump("fail")
@@ -171,10 +195,11 @@ def main():
     for t in threads:
         t.join(timeout=10)
 
-    total = stats["ok"] + stats["fail"] + stats["timeout"] + stats["rate_limited"] + stats["hist_ok"]
-    print("请求 %d 次：发送成功 %d、拉历史 %d、业务失败 %d、超时 %d、限流 %d，累计命中 %d 条"
-          % (total, stats["ok"], stats["hist_ok"], stats["fail"], stats["timeout"],
-             stats["rate_limited"], stats["search_hits"]))
+    total = (stats["ok"] + stats["fail"] + stats["timeout"] + stats["rate_limited"]
+             + stats["hist_ok"] + stats["markread_ok"])
+    print("请求 %d 次：发送 %d、拉历史 %d、已读 %d、业务失败 %d、超时 %d、限流 %d，命中 %d 条"
+          % (total, stats["ok"], stats["hist_ok"], stats["markread_ok"], stats["fail"],
+             stats["timeout"], stats["rate_limited"], stats["search_hits"]))
     if total == 0:
         print("❌ 一次都没成功——引擎没起，或 appkey/secret 不对")
         return 2
