@@ -102,35 +102,53 @@ func (c *LruCache) AddTimeoutAfterRead(timeout time.Duration) *LruCache {
 	return c
 }
 
+// cleanOldestByReadTime 清理 lastReadTime 早于 timeLine 的条目。
+//
+// 必须整体持写锁：c.lru 是 simplelru 的实现，GetOldest/Remove 都不是并发安全的，
+// 而 Add/Get 都在 c.lock 保护下操作同一个 lru。之前这里没加锁，
+// 后台 ticker 协程会和请求协程撞在一起（`go test -race` 可复现：
+// cleanOldestByReadTime 读 list.Back() 与 Remove 内部的 list.remove 竞争）。
+//
+// batchEvict 回调放在**锁外**：回调里可能做 IO、甚至再碰别的缓存，
+// 持锁调用等于给自己埋一个死锁。
 func (c *LruCache) cleanOldestByReadTime(timeLine int64) {
-	cacheItems := []CacheItem{}
+	evicted := c.evictExpired(timeLine)
+	if c.batchEvict == nil || len(evicted) == 0 {
+		return
+	}
+	if c.batchSize <= 0 {
+		// 没设批量大小时一次性回调，避免 start += 0 的死循环。
+		c.batchEvict(evicted)
+		return
+	}
+	for start := 0; start < len(evicted); start += c.batchSize {
+		end := start + c.batchSize
+		if end > len(evicted) {
+			end = len(evicted)
+		}
+		c.batchEvict(evicted[start:end])
+	}
+}
+
+// evictExpired 在持锁状态下摘掉过期条目，返回被淘汰的项（供锁外回调使用）。
+func (c *LruCache) evictExpired(timeLine int64) []CacheItem {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+
+	var evicted []CacheItem
 	for {
 		itemKey, itemValue, ok := c.lru.GetOldest()
-		if ok {
-			valObj := itemValue.(*lruCacheItem)
-			lastReadTime := valObj.lastReadTime
-			if lastReadTime < timeLine {
-				c.Remove(itemKey)
-				if c.batchEvict != nil {
-					cacheItems = append(cacheItems, CacheItem{
-						Key:   itemKey,
-						Value: valObj.value,
-					})
-					if len(cacheItems) >= c.batchSize {
-						c.batchEvict(cacheItems)
-						cacheItems = []CacheItem{}
-					}
-				}
-			} else {
-				break
-			}
-		} else {
+		if !ok {
 			break
 		}
+		valObj, ok := itemValue.(*lruCacheItem)
+		if !ok || valObj.lastReadTime >= timeLine {
+			break
+		}
+		c.lru.Remove(itemKey)
+		evicted = append(evicted, CacheItem{Key: itemKey, Value: valObj.value})
 	}
-	if c.batchEvict != nil && len(cacheItems) > 0 {
-		c.batchEvict(cacheItems)
-	}
+	return evicted
 }
 
 func (c *LruCache) Add(key, value interface{}) bool {
