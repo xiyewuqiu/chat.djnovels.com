@@ -96,17 +96,59 @@ nc -zv <server-ip> 65109
 
 ---
 
-## 2. 消息全文搜索（P1，唯一的"必备能力"缺口）
+## 2. 消息全文搜索（P1）—— 2026-11-22 第一步已落地
 
 ### 现状证据
 
-- 引擎 API 网关没有任何检索路由（`services/apigateway/routers/router.go` 全文核对）。
+- 引擎 API 网关原本没有任何检索路由（`services/apigateway/routers/router.go` 全文核对）。
 - 历史消息落在四张表：`p_hismsgs`（单聊）、`g_hismsgs`（群）、`s_hismsgs`（系统）、
-  `bc_hismsgs`（广播），文本内容在 `msg_body mediumblob`，JSON 形如 `{"content":"..."}`。
+  `bc_hismsgs`（广播）。
 - 现有索引：`idx_conver_time(app_key,conver_id,sub_channel,send_time)`、`idx_appkey_time(app_key,send_time)`，
   **没有内容索引**。
 
-### 方案（分两步，先能搜、再搜得快）
+### 处置结果（2026-11-22）
+
+实现方式是 `POST /apigateway/hismsgs/search`，但**没有照原方案在数据库里做 LIKE**，
+原因见下。实际做法是「拉候选 + 进程内过滤」。
+
+| 改动 | 文件 | 内容 |
+| --- | --- | --- |
+| 检索接口 | `chatapi/services/apigateway/apis/search.go`（新增） | 参数校验、关键词清洗、限流、候选拉取、内存匹配、摘要生成 |
+| 路由 | `chatapi/services/apigateway/routers/router.go` | `POST /hismsgs/search` |
+| 错误码 | `chatapi/commons/errs/errorcode.go` | 新增 `IMErrorCode_API_RATE_LIMITED = 10012`（HTTP 429） |
+| 可见性规则抽取 | `chatapi/services/historymsg/services/hismsgservice.go` | 新增 `ResolveGroupReadFloor`，让历史查询与搜索共用同一套成员/入群时间/保留期规则 |
+| 测试 | `chatapi/services/apigateway/apis/search_test.go` | 关键词按 rune 计数、JSON 提取、摘要截断、限流窗口 |
+
+**与原方案的两处关键偏离：**
+
+1. **没有对 `msg_body` 做 LIKE。** 原方案假设 `msg_body` 是 JSON，实际它是 `DownMsg` 的
+   **protobuf 序列化结果**（其中 `MsgContent` 才是 `[]byte` 的 JSON）。在序列化字节上做 LIKE
+   会把结构字节也当正文匹配，精度不可控。
+2. **没有在 DAO 加检索方法。** 引擎的 actor 入参必须是 protobuf 消息，现有 `QryHisMsgsReq`
+   没有关键词字段；新增字段要重新生成 539KB 的 `appmessages.pb.go`，会把跟版 diff 彻底搅乱
+   （而本项目正在刻意控制跟版成本）。改为网关层拉候选、内存匹配后，**自动继承了
+   `qry_hismsgs` 已有的全部可见性规则**（群成员、入群前不可见、用户清除时间、租户保留期）——
+   少写一条 SQL 就少一处可能漏规则的地方。
+
+### 能力边界（必须让接入方知道）
+
+- **只覆盖会话最近 500 条**（`SearchCandidateLimit`），不是全量检索。想搜更早的内容要上内容索引。
+- 只检索文本消息（`jg:text`）；图片、文件、合并转发不参与匹配。
+- 同一 `(appkey, user)` 每分钟最多 20 次，超出返回 `10012 / HTTP 429`。
+- 返回的是**摘要片段**不是全文；客户端点击后用 `msg_id` 定位原消息。
+
+### 验收（已执行）
+
+`go test ./services/apigateway/apis/ -run 'Search|Snippet|Trim|Contains|Extract'` 全绿，
+覆盖：关键词按 rune 计数（汉字 2 字合法、33 字超限）、`MsgContent` JSON 提取（含转义、
+非法 JSON 返回空）、摘要首尾省略号规则、限流 20 次上限与窗口滑动、限流按 key 隔离。
+
+**未验证**：接口未在真实服务 + 真实 MySQL 上跑过（本机无数据库）；
+`qry_hismsgs` 单次拉 500 条的性能未压测。
+
+---
+
+### 原方案（保留存档，已不适用）
 
 **第一步：窗口内 LIKE 检索（1–2 天，风险低）**
 
