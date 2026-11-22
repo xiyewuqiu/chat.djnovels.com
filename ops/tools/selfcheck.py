@@ -142,6 +142,22 @@ def check_tool_selftests(res):
             res.fail(name, tail)
 
 
+def check_race(res):
+    """缓存是并发密集区，且后台清理协程容易漏锁——固定用 -race 跑一遍。
+
+    只跑 caches 这一个包：整个仓库跑 -race 要几分钟，不适合放进每次自检。
+    """
+    for label, repo in (("业务层", BUSINESS_REPO), ("引擎", ENGINE_REPO)):
+        code, out = run(["go", "test", "-race", "./commons/caches/"], cwd=repo, timeout=600)
+        if "DATA RACE" in out:
+            res.fail("%s 缓存并发安全" % label, "检测到 DATA RACE")
+        elif code != 0:
+            tail = out.strip().splitlines()[-1] if out.strip() else "exit %d" % code
+            res.fail("%s 缓存并发安全" % label, tail)
+        else:
+            res.pass_("%s 缓存并发安全" % label, "-race 无竞争")
+
+
 def check_git_clean(res):
     for label, repo in (("业务层", BUSINESS_REPO), ("引擎", ENGINE_REPO)):
         code, out = run(["git", "status", "--porcelain"], cwd=repo, timeout=60)
@@ -197,6 +213,7 @@ def main():
         check_vet(res)
         check_tests(res)
         check_tool_selftests(res)
+        check_race(res)
         check_git_clean(res)
         check_doc_references(res)
         check_no_artifacts(res)
