@@ -93,6 +93,7 @@
 | **引擎管理台 v2 无鉴权** | ✅ 已修（2026-11-22：`X-Admin-Token` + 监听收敛回环） | §5 P0-1 |
 | **Webhook 无签名** | ✅ 已修（2026-11-22：HMAC + 时间戳） | §4.16 |
 | **服务密钥全局一把、租户可互相越权** | ✅ 已修（2026-11-22：租户级 `service_key`） | §4.18 |
+| **保留期只到数据库、读路径不设下界** | ✅ 已修（2026-11-22：`RetentionFloor` 并入 `cleanTime`） | §4.19 |
 | 多进程限流共享 | ⚠️ 已知限制 | 单进程部署成立，多进程需换 Redis |
 | 附件配额与对象存储 TTL | ⚠️ 待办 | 运维侧策略，非代码缺陷 |
 
@@ -289,6 +290,49 @@
 
 **未做**：存量生产租户需要显式调一次 `scope=service_key` 才会拿到自己的密钥；
 在此之前它们的调用仍走平台密钥，行为不变（向后兼容）。这一步没有自动化迁移，属运维动作。
+
+### 4.19 保留期只到数据库、读路径不设下界（2026-11-22 已修）
+
+**问题**：引擎的过期清理挂在「保存历史消息」路径上（按应用 60 秒节流），库里必然存在
+「已过期但还没被清掉」的残留。而所有历史读取只用请求里的 `startTime` 与 `cleanTime`
+（用户主动清除时间），**没有按租户 `HisMsgSaveDay` 钳制**。结果：只要把 `startTime` 拉到很早，
+就能读到超过保留期的消息——「保留 7 天」只在数据库层成立，对用户不成立。
+
+**改法**（`chatapi/services/historymsg/services`）：
+
+- `RetentionFloor(appkey)`：按 `HisMsgSaveDay` 换算时间下界，`<=0` 视为不设下界；
+- `GetEffectiveCleanTime`：用户清除时间与保留期下界取较大者；
+- 关键点：DAO 层早就把 `cleanTime` 同时用于两种翻页方向
+  （正序 `start=max(startTime,cleanTime)`、倒序 `send_time>cleanTime`），
+  所以**把下界并入 `cleanTime` 就能覆盖两个方向，不必改 DAO 签名**，跟版冲突面最小。
+
+覆盖的读取路径：
+
+| 入口 | 处理 |
+| --- | --- |
+| `QryHisMsgs` 单聊 / 群 / 系统 | 改用 `GetEffectiveCleanTime` |
+| `QryHisMsgs` 群发 / 广播 | 传 `RetentionFloor(appkey)`（这两类没有用户清除时间） |
+| `QryFirstUnreadMsg`（单聊/系统/群） | 传 `RetentionFloor(appkey)` |
+| `QryHisMsgByIds` | 改用 `GetEffectiveCleanTime` |
+| 引用消息（`retrieve*ReferenceMsg`） | `FindByIds` 传 `RetentionFloor(appkey)` |
+| 合并转发（`MergeMsg`） | 同上——**这条最要紧**：它会把过期正文复制进 `mergedmsgs` 长期保存 |
+| 消息扩展查询（`QryMsgExts` / `QryMsgExSets`） | 同上 |
+
+**刻意不加下界的唯一例外**：删消息前的 sender 权限校验（`hismsgservice.go`）。
+加了下界会让过期消息查不到，校验循环一次都不执行，等于放开「只能删自己的消息」。
+代码里已写注释，防止后人"顺手统一"。
+
+**验证**：
+- `services/historymsg/services/retention_test.go`：`retentionFloorAt` 的换算口径（0/负数/1/7/30 天）、
+  `maxCleanTime` 的取值规则（含相等、单边为 0）；
+- 全仓 grep 确认除上述两处权限校验外，再无 `FindByIds(..., 0)` / `QryHisMsgs(..., 0,` 的读路径；
+- 编译与既有测试通过。
+
+**未验证 / 未做**：
+1. **没有在真实 MySQL 上端到端验过**——本地无数据库，DAO 层"`cleanTime` 作为下界生效"
+   依据的是读代码，不是跑出来的结果。上线前应造 8 天前的历史消息实测一次。
+2. 响应未返回 `retention_floor`，客户端无法区分"本来就没有"与"被保留期挡住"。
+3. `mergedmsgs` / `msgext` 表里**已经复制存在**的副本、以及对象存储附件不受保留期约束。
 
 ---
 

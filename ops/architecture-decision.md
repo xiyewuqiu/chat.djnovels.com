@@ -192,9 +192,15 @@
 
 ### 6.2 必须补的四个缺口
 
-**一、读路径没有保留期钳制。**
-`QryHisMsgs` 只使用 `startTime` 与 `cleanTime`（`hismsgservice.go:238-248`）。清理滞后期间，超过 7 天的消息仍可被拉取。
-修法：入口处取 `startTime = max(startTime, now - HisMsgSaveDay*86400000)`，响应返回 `retention_floor`。先上线"隐藏"，再上线"删除"。
+**一、读路径没有保留期钳制。（2026-11-22 已修）**
+原状：`QryHisMsgs` 只使用 `startTime` 与 `cleanTime`（`hismsgservice.go`）。清理滞后期间，超过保留期的消息仍可被拉取。
+现处置：新增 `RetentionFloor(appkey)`（按租户 `HisMsgSaveDay` 换算时间下界）与
+`GetEffectiveCleanTime`（用户清除时间与保留期取较大者），并入 DAO 已有的 `cleanTime` 参数
+（正序走 `start=max(startTime,cleanTime)`，倒序走 `send_time>cleanTime`），两种翻页方向自动生效。
+覆盖：单聊 / 群 / 系统 / 群发 / 广播历史查询、未读消息、引用消息、合并转发、消息扩展。
+**未做**：响应里没有 `retention_floor` 字段，客户端无法区分「更早的消息本来就没有」与「被保留期挡住」；
+`mergedmsgs` / `msgext` 表里的副本、对象存储附件仍不受约束；删消息前的权限校验刻意不加下界
+（加了下界会让过期消息查不到、循环不执行，等于放开"只能删自己的消息"）。
 
 **二、清理依赖消息流量。**
 挂在保存路径、60 秒节流，没有新消息的会话永不清理。
