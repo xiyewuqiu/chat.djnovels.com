@@ -28,7 +28,8 @@ func Validate(ctx *gin.Context) {
 	ctx.Set(string(ctxs.CtxKey_Session), session)
 	//&& urlPath != "/jim/serverinfos"
 	urlPath := ctx.Request.URL.Path
-	if urlPath == "/jim/serverinfos" || urlPath == "/jim/servers/info" || urlPath == "/jim/servers/list" {
+	// 这几个是公开的发现类接口：接入方在拿到 token 之前就需要它们。
+	if urlPath == "/jim/serverinfos" || urlPath == "/jim/servers/info" || urlPath == "/jim/servers/list" || urlPath == "/jim/capabilities" {
 		return
 	}
 	//check appkey

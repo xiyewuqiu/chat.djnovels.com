@@ -16,6 +16,7 @@ func Route(eng *gin.Engine, prefix string) *gin.RouterGroup {
 	group.GET("/serverinfos", apis.GetServerInfo)
 	group.GET("/servers/info", apis.GetServerInfo)
 	group.GET("/servers/list", apis.GetServerLists)
+	group.GET("/capabilities", apis.GetCapabilities)
 
 	group.POST("/login", apis.Login)
 	group.POST("/register", apis.Register)
