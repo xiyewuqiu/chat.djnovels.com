@@ -1,3 +1,20 @@
+> **本仓库是 djnovels 的 IM 平台业务层，不是上游原版。**
+>
+> 它是 [JuggleChat Server](https://github.com/juggleim/jugglechat-server) 的 fork，
+> 与同级的 `chatapi.djnovels.com`（JuggleIM 引擎 fork）一起构成自建、自控的 IM PaaS 底座。
+> 两个仓库共用同一个 MySQL，部署在同一台机器上。
+>
+> | 想知道什么 | 看哪里 |
+> | --- | --- |
+> | 现在能干什么、凭什么说它能用 | [`docs/STATE-2026-11.zh-CN.md`](docs/STATE-2026-11.zh-CN.md) |
+> | 怎么部署、怎么运维、怎么跟上游 | [`ops/README.md`](ops/README.md) |
+> | 本地怎么起真服务做验证 | [`ops/local-verification.zh-CN.md`](ops/local-verification.zh-CN.md) |
+> | 客户端怎么接（含 SDK） | [`docs/client-sdk.zh-CN.md`](docs/client-sdk.zh-CN.md) |
+> | 消息搜索的能力边界 | [`docs/message-search.zh-CN.md`](docs/message-search.zh-CN.md) |
+> | Webhook 怎么验签 | [`docs/webhook-signature.zh-CN.md`](docs/webhook-signature.zh-CN.md) |
+>
+> **下面的内容来自上游**，介绍的是 JuggleChat 本身，不代表本项目当前状态。
+
 <div align="center">
   <img src="routers/webim/assets/icon-82965b96.png" alt="JuggleChat logo" width="104" />
 
