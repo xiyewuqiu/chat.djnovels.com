@@ -34,7 +34,7 @@ import urllib.request
 stop = threading.Event()
 # timeout 单独计数：race detector 会让引擎慢 2–5 倍，压测里超时很正常，
 # 把它和"真的出错"混在一起会导致误判。
-stats = {"ok": 0, "fail": 0, "timeout": 0, "search_hits": 0}
+stats = {"ok": 0, "fail": 0, "timeout": 0, "rate_limited": 0, "search_hits": 0}
 stats_lock = threading.Lock()
 
 
@@ -76,7 +76,9 @@ def post(url, body, headers, timeout=15):
 
 def worker(index, args):
     base = args.engine.rstrip("/")
+    round_no = 0
     while not stop.is_set():
+        round_no += 1
         headers = signed_headers(args.appkey, args.app_secret)
         body = {
             "sender_id": "race-u%d" % index,
@@ -95,6 +97,12 @@ def worker(index, args):
             bump("fail")
 
         headers = signed_headers(args.appkey, args.app_secret)
+        # 搜索按人 20 次/分钟限流，且会话 ID 由双方 user_id 决定——
+        # 换 user_id 等于换会话，根本搜不到刚发的消息。
+        # 所以保持同一会话，只把搜索频率降到不触发限流的节奏
+        # （每 30 次发送搜 1 次，30 秒内每人约 14 次）。
+        if round_no % 30 != 0:
+            continue
         sresp = post(base + "/apigateway/hismsgs/search", {
             "user_id": "race-u%d" % index,
             "target_id": "race-peer",
@@ -102,8 +110,14 @@ def worker(index, args):
             "keyword": "书单",
             "limit": 5,
         }, headers)
-        if sresp.get("code") == 0:
+        scode = sresp.get("code")
+        if scode == 0:
             bump("search_hits", (sresp.get("data") or {}).get("count", 0))
+        elif scode in (17019, 10012):
+            # 搜索按人 20 次/分钟限流；压测超过这个节奏必然触发，属预期。
+            bump("rate_limited")
+        elif scode == -2:
+            bump("timeout")
         else:
             bump("fail")
 
@@ -126,9 +140,10 @@ def main():
     for t in threads:
         t.join(timeout=10)
 
-    total = stats["ok"] + stats["fail"] + stats["timeout"]
-    print("请求 %d 次：成功 %d、业务失败 %d、超时 %d，累计命中 %d 条"
-          % (total, stats["ok"], stats["fail"], stats["timeout"], stats["search_hits"]))
+    total = stats["ok"] + stats["fail"] + stats["timeout"] + stats["rate_limited"]
+    print("请求 %d 次：成功 %d、业务失败 %d、超时 %d、限流 %d，累计命中 %d 条"
+          % (total, stats["ok"], stats["fail"], stats["timeout"],
+             stats["rate_limited"], stats["search_hits"]))
     if total == 0:
         print("❌ 一次都没成功——引擎没起，或 appkey/secret 不对")
         return 2
