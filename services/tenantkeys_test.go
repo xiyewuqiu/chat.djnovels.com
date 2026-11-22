@@ -23,10 +23,12 @@ func TestValidTenantStatusBounds(t *testing.T) {
 
 func TestNormalizeRotateScope(t *testing.T) {
 	cases := map[string]string{
-		"":           rotateScopeSecret,
-		"secret":     rotateScopeSecret,
-		"SECURE_KEY": rotateScopeSecureKey,
-		" both ":     rotateScopeBoth,
+		"":              rotateScopeSecret,
+		"secret":        rotateScopeSecret,
+		"SECURE_KEY":    rotateScopeSecureKey,
+		" both ":        rotateScopeBoth,
+		"service_key":   rotateScopeServiceKey,
+		" service_key ": rotateScopeServiceKey,
 	}
 	for in, want := range cases {
 		got, ok := normalizeRotateScope(in)

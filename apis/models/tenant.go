@@ -11,9 +11,12 @@ type CreateTenantReq struct {
 
 // CreateTenantResp 只在创建时返回一次密钥，之后再查不到。
 type CreateTenantResp struct {
-	AppKey        string `json:"app_key"`
-	AppSecret     string `json:"app_secret"`
-	AppSecureKey  string `json:"app_secure_key"`
+	AppKey       string `json:"app_key"`
+	AppSecret    string `json:"app_secret"`
+	AppSecureKey string `json:"app_secure_key"`
+	// ServiceKey 是该租户调 /jim/internal/* 的服务密钥，只能作用于本租户的 app_key。
+	// 与平台级 serviceKey（配置项）不同：平台密钥可跨租户，租户密钥越界即拒。
+	ServiceKey    string `json:"service_key"`
 	AppName       string `json:"app_name"`
 	AppType       int    `json:"app_type"`
 	RetentionDays int    `json:"retention_days"`

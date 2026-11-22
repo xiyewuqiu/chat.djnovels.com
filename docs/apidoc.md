@@ -1538,8 +1538,14 @@ POST /callback/assistants/msgcallback
 
 ## 23. 内部接口（服务密钥，不计入上方统计）
 
-全部挂在 `/jim/internal/*`，鉴权用 `X-Service-Key`（配置项 `serviceKey`，留空即关闭），
-并需带 `appkey` 头指定租户。**公网 Nginx 必须拒绝该前缀**，只允许私网调用。
+全部挂在 `/jim/internal/*`，鉴权用 `X-Service-Key` 头 + `appkey` 头指定租户。**公网 Nginx 必须拒绝该前缀**，只允许私网调用。
+
+凭据分两类，语义不同（实现见 `apis/serviceauth.go`）：
+
+| 凭据 | 来源 | 作用范围 |
+| --- | --- | --- |
+| 平台密钥 `serviceKey` | 配置项 | **任意租户**，带哪个 `appkey` 就作用于哪个；只给运维脚本，不下发给接入方 |
+| 租户密钥 `service_key` | `appexts`（键 `service_key`），开通时生成 | **只能作用于本租户的 `appkey`**；越界即拒 |
 
 | 方法与路径 | 用途 | 请求 |
 | --- | --- | --- |
@@ -1551,9 +1557,12 @@ POST /callback/assistants/msgcallback
 | `POST /jim/internal/users/ban` | 封禁账号 | `items:[{user_id,duration_seconds,ext}]`、`operator_id`；`duration_seconds` ≤0 为永久 |
 | `POST /jim/internal/users/unban` | 解除封禁 | `user_ids`、`operator_id` |
 | `GET /jim/internal/audits/list` | 管理操作审计 | Query：`action`（空=全部）、`limit`（默认 20，上限 100）、`offset` |
-| `POST /jim/internal/apps/create` | 开通租户 | `app_name`、`app_key`（可空，自动生成）、`app_type`、`retention_days`（1–30，缺省 7） |
+| `POST /jim/internal/apps/create` | 开通租户 | `app_name`、`app_key`（可空，自动生成）、`app_type`、`retention_days`（1–30，缺省 7）；**响应含一次性 `service_key`** |
 | `GET /jim/internal/apps/info` | 租户概览 | Query：`app_key`；不返回任何密钥 |
 | `POST /jim/internal/apps/status` | 启用/停用租户 | `app_key`、`app_status`（0 正常 / 1 封禁 / 2 过期）、`operator_id` |
-| `POST /jim/internal/apps/rotate` | 轮换密钥 | `app_key`、`scope`（secret / secure_key / both，缺省 secret）、`operator_id` |
+| `POST /jim/internal/apps/rotate` | 轮换密钥 | `app_key`、`scope`（secret / secure_key / both / **service_key**，缺省 secret）、`operator_id` |
 
-失败语义与普通接口一致：HTTP 200 + 业务码；未配置 `serviceKey` 时一律 `17005`。
+`scope=both` 只换 `app_secret` 与 `app_secure_key`，**不含** `service_key`。
+
+失败语义与普通接口一致：HTTP 200 + 业务码。平台密钥与租户密钥都不匹配时返回 `17005`；
+未下发租户密钥的存量租户**不会回落到平台密钥**，必须显式调一次 `scope=service_key` 才拿到自己的钥匙。

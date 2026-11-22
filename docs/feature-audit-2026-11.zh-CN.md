@@ -92,6 +92,7 @@
 | **消息全文搜索** | ❌ 未解决 | 需要引擎加检索路由与索引，客户端加搜索页 |
 | **引擎管理台 v2 无鉴权** | ✅ 已修（2026-11-22：`X-Admin-Token` + 监听收敛回环） | §5 P0-1 |
 | **Webhook 无签名** | ✅ 已修（2026-11-22：HMAC + 时间戳） | §4.16 |
+| **服务密钥全局一把、租户可互相越权** | ✅ 已修（2026-11-22：租户级 `service_key`） | §4.18 |
 | 多进程限流共享 | ⚠️ 已知限制 | 单进程部署成立，多进程需换 Redis |
 | 附件配额与对象存储 TTL | ⚠️ 待办 | 运维侧策略，非代码缺陷 |
 
@@ -231,7 +232,7 @@
 ### 4.15 租户开通 API（P2）
 
 **问题**：开通一个新租户要手工写 `apps` 与 `appexts` 两处，密钥靠人肉生成——这正是 `architecture-decision.md` 里"新租户一次调用即可登录"那条验收没做完的部分。
-**改法**：`POST /jim/internal/apps/create` 一次完成：生成/校验 `app_key`、生成 `app_secret` 与 `app_secure_key`、写 `apps`、写默认保留期配置（`his_msg_save_day`、`offline_msg_save_time`、`offline_cmd_msg_save_time`），并让应用缓存立即失效。`GET /jim/internal/apps/info` 只回概览、不回密钥。
+**改法**：`POST /jim/internal/apps/create` 一次完成：生成/校验 `app_key`、生成 `app_secret`、`app_secure_key` 与**租户级 `service_key`**（2026-11-22 补，见 §4.18）、写 `apps`、写默认保留期配置（`his_msg_save_day`、`offline_msg_save_time`、`offline_cmd_msg_save_time`），并让应用缓存立即失效。`GET /jim/internal/apps/info` 只回概览、不回密钥。
 **验证**：`services/tenantservice_test.go`（保留期钳制 1–30、离线分钟换算、名字/`app_key` 校验、空租户拒绝）。
 
 ### 4.16 对外 Webhook：引擎已经有，缺的是签名（结论更正）
@@ -255,6 +256,39 @@
 - `POST /jim/internal/apps/rotate`：`scope` 取 `secret`（默认，影响面最小）、`secure_key`、`both`。**轮换 `app_secure_key` 会让该租户所有已签发的用户令牌立刻失效**，所有人必须重新登录——这是有意为之，调用方要自己挑窗口。
 - 两个动作都写审计（`app.status` / `app.rotate`）。
 **验证**：`services/tenantkeys_test.go`（状态边界、scope 归一化与拒绝、入参短路）。
+
+### 4.18 多租户隔离：服务密钥曾经是全局一把（2026-11-22 已修）
+
+**问题**：`/jim/internal/*` 只校验 `configures.Config.ServiceKey` 这一个全局值，然后用请求头里的
+`appkey` 决定作用对象。也就是说：**任何持有这把密钥的人，带上任意 `appkey` 头就能替别的租户
+签发 IM 凭据、加群成员、封禁用户、发全站公告、翻举报工单与审计日志、建/停/轮换租户。**
+在"多租户 PaaS"的语境下，"租户 A 碰不到租户 B"只是纸面承诺。
+
+**改法**（两把钥匙，语义分开）：
+
+| 凭据 | 存放 | 作用范围 |
+| --- | --- | --- |
+| 平台密钥 `serviceKey` | `conf/config.yml` | 任意租户，留给运维脚本 |
+| 租户密钥 `service_key` | `im_db.appexts`（键 `service_key`） | 只能作用于本租户 `appkey`，越界即拒 |
+
+- `CreateTenant` 自动生成租户密钥并在响应里返回一次；
+- `RotateTenantKeys` 新增 `scope=service_key`，对存量租户等同首次签发；
+  `scope=both` 刻意**不含** service_key，保持"两者"的字面语义；
+- `ServiceAuth` 先比平台密钥，再取该租户密钥比对，两条都不过即拒绝；
+  **未下发租户密钥的存量租户回落到拒绝，而不是回落到平台密钥**——回落一次隔离就没了；
+- `appinfos.GetServiceKey` 走现有 LRU 缓存（5 分钟，开通/轮换主动失效），
+  且 **DB 不可用时 fail closed**（recover 后判失败），避免库抖动把鉴权炸成 500。
+
+**验证**：
+- `apis/serviceauth_tenant_test.go`：租户密钥放行、**跨租户越界必须拒绝**、
+  未下发密钥拒绝、平台密钥为空时租户密钥仍可用、平台密钥可跨租户；
+- `commons/appinfos/appinfo_servicekey_test.go`：取值、缺失、空值、**每租户互不串台**、
+  **DB 不可用时 fail closed**；
+- `services/tenantkeys_test.go`：`service_key` scope 归一化；
+- `services/tenantservice_test.go`：`both` 不吞 service_key、键名常量单一权威。
+
+**未做**：存量生产租户需要显式调一次 `scope=service_key` 才会拿到自己的密钥；
+在此之前它们的调用仍走平台密钥，行为不变（向后兼容）。这一步没有自动化迁移，属运维动作。
 
 ---
 

@@ -398,6 +398,55 @@ curl -s -X POST http://127.0.0.1:65109/admingateway/apps/appurl/set -H 'Content-
 curl -s "http://127.0.0.1:65110/jim/serverinfos?no=100000"
 ```
 
+### 租户级服务密钥（多租户隔离的实际边界）
+
+`/jim/internal/*` 现在接受**两类**凭据，语义不同，别混：
+
+| 凭据 | 存放位置 | 作用范围 | 谁用 |
+| --- | --- | --- | --- |
+| 平台密钥 `serviceKey` | `conf/config.yml` | **任意租户**（带哪个 appkey 就作用于哪个） | 运维脚本、平台后台 |
+| 租户密钥 `service_key` | `im_db.appexts`（`app_item_key='service_key'`） | **只能作用于本租户的 appkey** | 接入方自己的业务后端 |
+
+为什么必须分开：只有一个全局密钥时，任何拿到它的人带上任意 `appkey` 头就能替别的租户
+签发 IM 凭据、封用户、翻审计，"租户隔离"只是纸面承诺。租户密钥存在该租户自己的配置里，
+越界即拒，泄露也不牵连别人。
+
+**开通新租户**时自动生成，并在响应里返回一次：
+
+```bash
+curl -s -X POST http://127.0.0.1:65110/jim/internal/apps/create \
+  -H "X-Service-Key: $PLATFORM_SERVICE_KEY" -H 'appkey: platform' \
+  -H 'Content-Type: application/json' \
+  -d '{"app_name":"Book Club","app_type":1,"retention_days":7}'
+# 响应里的 service_key 只出现这一次，立即交给接入方保管
+```
+
+（平台密钥路径下 `appkey` 头不被 create 接口使用，但它必须非空——中间件统一要求。）
+
+**存量租户补发**（对没下发过密钥的租户，`scope=service_key` 等同首次签发）：
+
+```bash
+curl -s -X POST http://127.0.0.1:65110/jim/internal/apps/rotate \
+  -H "X-Service-Key: $PLATFORM_SERVICE_KEY" -H 'appkey: platform' \
+  -H 'Content-Type: application/json' \
+  -d '{"app_key":"<租户>","scope":"service_key"}'
+```
+
+**接入方**用自己那把钥匙换 IM 凭据：
+
+```bash
+curl -s -X POST http://127.0.0.1:65110/jim/internal/token \
+  -H "X-Service-Key: <该租户的 service_key>" -H 'appkey: <该租户 appkey>' \
+  -H 'Content-Type: application/json' \
+  -d '{"account":"user-1001","nickname":"读者A"}'
+```
+
+三条硬规矩：
+
+1. **平台密钥不要下发给接入方**：它等价于全平台 root，带了哪个 appkey 就打开哪扇门。
+2. `scope=service_key` 轮换后旧密钥立刻失效（走缓存主动失效，不用重启进程）。
+3. `scope=both` **不含** service_key，只换 `app_secret` 与 `app_secure_key`——口径保持"两者"。
+
 ---
 
 ## 10. 两个 schema 的列差异（必须知道）

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	apimodels "github.com/juggleim/jugglechat-server/apis/models"
+	"github.com/juggleim/jugglechat-server/commons/appinfos"
 	"github.com/juggleim/jugglechat-server/commons/errs"
 )
 
@@ -49,5 +50,23 @@ func TestGetTenantInfoRequiresAppkey(t *testing.T) {
 	code, _ := GetTenantInfo(context.Background(), "")
 	if code != errs.IMErrorCode_APP_APPKEY_REQUIRED {
 		t.Fatalf("got %d", code)
+	}
+}
+
+func TestNormalizeRotateScopeServiceKeySemantics(t *testing.T) {
+	// both 的语义必须钉死：只换 apps 表的 app_secret 与 app_secure_key，
+	// 不顺手把 service_key 也换掉——调用方按"影响面最小"选的 both，口径不能漂。
+	if rotateScopeBoth == rotateScopeServiceKey {
+		t.Fatal("both 与 service_key 不应是同一个 scope")
+	}
+	if scope, _ := normalizeRotateScope("both"); scope == rotateScopeServiceKey {
+		t.Fatal("both 不应归一化成 service_key")
+	}
+}
+
+// 服务密钥的键名只有一个权威定义，防两处常量漂移。
+func TestTenantServiceKeyConstantMatchesAppInfos(t *testing.T) {
+	if TenantExtServiceKey != appinfos.ExtServiceKey {
+		t.Fatalf("service key 常量不一致: services=%q appinfos=%q", TenantExtServiceKey, appinfos.ExtServiceKey)
 	}
 }

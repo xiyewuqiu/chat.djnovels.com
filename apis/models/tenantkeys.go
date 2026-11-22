@@ -7,7 +7,9 @@ type UpdateTenantStatusReq struct {
 	OperatorId string `json:"operator_id"`
 }
 
-// RotateTenantKeysReq 轮换密钥。scope：secret / secure_key / both。
+// RotateTenantKeysReq 轮换密钥。
+// scope：secret / secure_key / both / service_key。
+// service_key 对尚未下发过租户密钥的存量租户等同于"首次签发"。
 type RotateTenantKeysReq struct {
 	AppKey     string `json:"app_key"`
 	Scope      string `json:"scope"`
@@ -19,4 +21,5 @@ type RotateTenantKeysResp struct {
 	AppKey       string `json:"app_key"`
 	AppSecret    string `json:"app_secret,omitempty"`
 	AppSecureKey string `json:"app_secure_key,omitempty"`
+	ServiceKey   string `json:"service_key,omitempty"`
 }

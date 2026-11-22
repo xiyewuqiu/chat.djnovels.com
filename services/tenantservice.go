@@ -23,6 +23,9 @@ const (
 	tenantKeyLength            = 16
 )
 
+// TenantExtServiceKey 是租户级服务密钥在 appexts 里的键名，权威定义在 commons/appinfos。
+const TenantExtServiceKey = appinfos.ExtServiceKey
+
 var tenantAppKeyRegexp = regexp.MustCompile(`^[a-zA-Z0-9_-]{6,32}$`)
 
 // CreateTenant 开通租户：写 apps + 默认保留期配置（appexts），并让应用缓存立刻失效。
@@ -44,6 +47,9 @@ func CreateTenant(ctx context.Context, req *apimodels.CreateTenantReq) (errs.IME
 	}
 	appSecret := utils.RandStr(tenantSecretLength)
 	appSecureKey := utils.RandStr(tenantSecretLength)
+	// 每个租户一把独立的服务密钥：它只能签发本租户的 IM 凭据。
+	// 平台级 serviceKey（配置项）仍然存在，但只给运维用，不随租户下发。
+	serviceKey := utils.RandStr(tenantSecretLength)
 
 	storage := dbs.AppInfoDao{}
 	if appKey == "" {
@@ -83,12 +89,17 @@ func CreateTenant(ctx context.Context, req *apimodels.CreateTenantReq) (errs.IME
 			return errs.IMErrorCode_APP_DEFAULT, nil
 		}
 	}
+	if err := extDao.Upsert(appKey, TenantExtServiceKey, serviceKey); err != nil {
+		appinfos.InvalidateAppInfoCache(appKey)
+		return errs.IMErrorCode_APP_DEFAULT, nil
+	}
 	appinfos.InvalidateAppInfoCache(appKey)
 
 	return errs.IMErrorCode_SUCCESS, &apimodels.CreateTenantResp{
 		AppKey:        appKey,
 		AppSecret:     appSecret,
 		AppSecureKey:  appSecureKey,
+		ServiceKey:    serviceKey,
 		AppName:       appName,
 		AppType:       req.AppType,
 		RetentionDays: days,
@@ -200,18 +211,31 @@ func RotateTenantKeys(ctx context.Context, req *apimodels.RotateTenantKeysReq) (
 	if err := storage.UpdateKeys(appkey, appSecret, appSecureKey); err != nil {
 		return errs.IMErrorCode_APP_DEFAULT, nil
 	}
+	// service_key 存在 appexts，与上面两个列不同表，单独走一次写入。
+	// 对尚未下发过租户密钥的存量租户，scope=service_key 等同于首次签发。
+	if scope == rotateScopeServiceKey {
+		serviceKey := utils.RandStr(tenantSecretLength)
+		if err := (dbs.AppExtDao{}).Upsert(appkey, TenantExtServiceKey, serviceKey); err != nil {
+			return errs.IMErrorCode_APP_DEFAULT, nil
+		}
+		resp.ServiceKey = serviceKey
+	}
 	appinfos.InvalidateAppInfoCache(appkey)
 	RecordAdminAudit(ctx, req.OperatorId, dbmodels.AdminAuditAction_AppRotate, appkey, scope)
 	return errs.IMErrorCode_SUCCESS, resp
 }
 
 const (
-	rotateScopeSecret    = "secret"
-	rotateScopeSecureKey = "secure_key"
-	rotateScopeBoth      = "both"
+	rotateScopeSecret     = "secret"
+	rotateScopeSecureKey  = "secure_key"
+	rotateScopeBoth       = "both"
+	rotateScopeServiceKey = "service_key"
 )
 
 // normalizeRotateScope 空值默认只换 app_secret（影响面最小）。
+//
+// both 只覆盖 apps 表里的两把密钥，不含 service_key：
+// "both" 字面就是两者，把第三项塞进去会让调用方算错影响面。
 func normalizeRotateScope(scope string) (string, bool) {
 	switch strings.ToLower(strings.TrimSpace(scope)) {
 	case "", rotateScopeSecret:
@@ -220,8 +244,18 @@ func normalizeRotateScope(scope string) (string, bool) {
 		return rotateScopeSecureKey, true
 	case rotateScopeBoth:
 		return rotateScopeBoth, true
+	case rotateScopeServiceKey:
+		return rotateScopeServiceKey, true
 	}
 	return "", false
+}
+
+// TenantServiceKey 读取租户级服务密钥。
+//
+// 实现放在 commons/appinfos（带 LRU 缓存，开通与轮换时会主动失效），
+// 这里只做转发，避免 apis 层为了取一把密钥反向依赖 services。
+func TenantServiceKey(appkey string) (string, bool) {
+	return appinfos.GetServiceKey(appkey)
 }
 
 // validTenantStatus 只认 0 正常 / 1 封禁 / 2 过期，与引擎 AppStatus 常量一致。
