@@ -34,7 +34,7 @@ import urllib.request
 stop = threading.Event()
 # timeout 单独计数：race detector 会让引擎慢 2–5 倍，压测里超时很正常，
 # 把它和"真的出错"混在一起会导致误判。
-stats = {"ok": 0, "fail": 0, "timeout": 0, "rate_limited": 0, "search_hits": 0}
+stats = {"ok": 0, "fail": 0, "timeout": 0, "rate_limited": 0, "hist_ok": 0, "search_hits": 0}
 stats_lock = threading.Lock()
 
 
@@ -55,6 +55,22 @@ def signed_headers(appkey, app_secret):
         "signature": sig,
         "Content-Type": "application/json",
     }
+
+
+def get(url, headers, timeout=15):
+    req = urllib.request.Request(url, headers=headers, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return json.loads(resp.read())
+    except urllib.error.HTTPError as err:
+        try:
+            return json.loads(err.read())
+        finally:
+            err.close()
+    except (socket.timeout, TimeoutError):
+        return {"code": -2}
+    except Exception:
+        return {"code": -1}
 
 
 def post(url, body, headers, timeout=15):
@@ -97,6 +113,21 @@ def worker(index, args):
             bump("fail")
 
         headers = signed_headers(args.appkey, args.app_secret)
+        # 拉历史：走 historymsg 的**读**路径（发送走的是写路径），
+        # 两条路径用的缓存与存储方法不同，都要压。
+        if round_no % 5 == 0:
+            ts = int(time.time() * 1000)
+            qurl = ("%s/apigateway/hismsgs/query?channel_type=1&from_id=race-u%d&target_id=race-peer&start=%d&count=20"
+                    % (base, index, ts))
+            hresp = get(qurl, headers)
+            hcode = hresp.get("code")
+            if hcode == 0:
+                bump("hist_ok")
+            elif hcode == -2:
+                bump("timeout")
+            else:
+                bump("fail")
+
         # 搜索按人 20 次/分钟限流，且会话 ID 由双方 user_id 决定——
         # 换 user_id 等于换会话，根本搜不到刚发的消息。
         # 所以保持同一会话，只把搜索频率降到不触发限流的节奏
@@ -140,9 +171,9 @@ def main():
     for t in threads:
         t.join(timeout=10)
 
-    total = stats["ok"] + stats["fail"] + stats["timeout"] + stats["rate_limited"]
-    print("请求 %d 次：成功 %d、业务失败 %d、超时 %d、限流 %d，累计命中 %d 条"
-          % (total, stats["ok"], stats["fail"], stats["timeout"],
+    total = stats["ok"] + stats["fail"] + stats["timeout"] + stats["rate_limited"] + stats["hist_ok"]
+    print("请求 %d 次：发送成功 %d、拉历史 %d、业务失败 %d、超时 %d、限流 %d，累计命中 %d 条"
+          % (total, stats["ok"], stats["hist_ok"], stats["fail"], stats["timeout"],
              stats["rate_limited"], stats["search_hits"]))
     if total == 0:
         print("❌ 一次都没成功——引擎没起，或 appkey/secret 不对")
