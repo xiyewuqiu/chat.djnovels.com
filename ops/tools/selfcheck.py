@@ -158,6 +158,16 @@ def check_race(res):
             res.pass_("%s 缓存并发安全" % label, "-race 无竞争")
 
 
+def check_nginx(res):
+    """Nginx 反代目标必须在白名单内：多一条 proxy_pass 就可能把管理台暴露出去。"""
+    code, out = run([sys.executable, "ops/tools/check_nginx_ports.py"], cwd=BUSINESS_REPO, timeout=120)
+    if code == 0:
+        res.pass_("Nginx 反代目标")
+    else:
+        tail = [line.strip() for line in out.splitlines() if "❌" in line]
+        res.fail("Nginx 反代目标", tail[0] if tail else "exit %d" % code)
+
+
 def check_git_clean(res):
     for label, repo in (("业务层", BUSINESS_REPO), ("引擎", ENGINE_REPO)):
         code, out = run(["git", "status", "--porcelain"], cwd=repo, timeout=60)
@@ -214,6 +224,7 @@ def main():
         check_tests(res)
         check_tool_selftests(res)
         check_race(res)
+        check_nginx(res)
         check_git_clean(res)
         check_doc_references(res)
         check_no_artifacts(res)
