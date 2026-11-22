@@ -110,6 +110,7 @@ func Route(eng *gin.Engine, prefix string) *gin.RouterGroup {
 	//message operation
 	group.POST("/messages/recall", apis.RecallMsg)
 	group.POST("/messages/del", apis.DelMsgs)
+	group.POST("/messages/search", apis.SearchMessages)
 
 	// conversation confs
 	group.GET("/converconfs/get", apis.GetConverConfs)

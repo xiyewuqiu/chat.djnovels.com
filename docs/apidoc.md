@@ -2,7 +2,7 @@
 
 本文档根据当前仓库的路由、Handler、请求模型和 Service 实现整理，覆盖所有已注册的 HTTP 业务接口。
 
-- 主业务接口：94 个，统一使用 `/jim` 前缀。
+- 主业务接口：95 个，统一使用 `/jim` 前缀。
 - 助手回调接口：1 个，使用独立的 `/callback` 前缀和端口。
 - 合计：95 个 `method + path` 接口；另有 12 个内部接口（`/jim/internal/*`，服务密钥鉴权，不计入上述统计）。
 - 文档反映当前代码行为；代码中没有显式实现的校验、权限或数据清理能力，不应视为接口保证。
@@ -1297,9 +1297,10 @@ GET /jim/friends/myapplications?start=0&count=20&order=0
 GET /jim/friends/mypendingapplications?start=0&count=20&order=0
 ```
 
-## 14. 消息管理接口（2 个）
+## 14. 消息管理接口（3 个）
 
-两个接口当前只支持群会话，要求 `channel_type == 2`，并检查当前用户是否为群主或管理员。
+14.1 与 14.2 是管理动作，当前只支持群会话，要求 `channel_type == 2`，并检查当前用户是否为群主或管理员。
+14.3 是普通用户能力，单聊群聊都支持。
 
 ### 14.1 管理员撤回消息
 
@@ -1341,6 +1342,31 @@ POST /jim/messages/del
   "msgs":[{"msg_id":"msg_123","msg_time":0,"msg_read_index":0}]
 }
 ```
+
+### 14.3 会话内消息搜索
+
+```http
+POST /jim/messages/search
+```
+
+- 鉴权：登录。**Body 里没有 `user_id`**——发起搜索的人从 token 解析，客户端不能自称是别人。
+- Body：`target_id` 必填、`channel_type`（1 单聊 / 2 群聊）必填、`keyword` 2–32 字符、`limit` 可选（缺省 20，上限 50）、`sub_channel` 可选。
+- 单聊和群聊都支持；群聊会校验成员身份与"入群前消息不可见"。
+- 返回：`data.hits[]`（`msg_id`、`sender_id`、`msg_time`、`msg_type`、`snippet`）、`data.count`、`data.scanned`、`data.candidate_limit`。
+- 主要错误：`17003`、`17005`、`17019`（限流，HTTP 也是 200）、`17000`。
+- **能力边界：只覆盖会话最近 500 条**，只搜文本消息，受保留期与可见性约束。
+
+```json
+{
+  "target_id":"group_123",
+  "channel_type":2,
+  "keyword":"书单",
+  "limit":20
+}
+```
+
+接入细节、错误码表与"为什么搜不到"的排查顺序见
+[`docs/message-search.zh-CN.md`](message-search.zh-CN.md)。
 
 ## 15. 会话配置接口（2 个）
 
@@ -1519,7 +1545,7 @@ POST /callback/assistants/msgcallback
 8. 分页接口混用了 `page/size`、`offset/count`、`offset/limit` 和 `start/count/order`，调用时应以各接口说明为准。
 9. 仓库中还存在未注册的 `QryFriends`、`AddFriend` Handler，它们不属于当前可调用 API。
 10. 登录、注册、验证码下发、验证码校验均有限流（见 `security` 配置），超限返回 `17019` 并带 `Retry-After`。注册按 IP 20 次/时固定，不开放配置。限流窗口在进程内存里，多进程部署会各算各的。
-11. 静态 Web 的 `GET /`、`HEAD /` 和 SPA fallback 不计入本文 94 个业务接口。
+11. 静态 Web 的 `GET /`、`HEAD /` 和 SPA fallback 不计入本文 95 个业务接口。
 12. 密码摘要为 `bcrypt$<hash>`；历史 SHA1 摘要仍可登录，并在登录成功后就地升级。
     该字段需要 `varchar(255)`（迁移 `20261113.sql`），旧库的 `varchar(50)` 装不下 bcrypt。
 
