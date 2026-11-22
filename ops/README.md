@@ -269,6 +269,9 @@ location /      { return 404; }                                # 其余一律拒
 
 端口通了不算，逐项过。
 
+> 开发机上没有 MySQL 时怎么跑起真服务做验证，见 `ops/local-verification.zh-CN.md`
+> （免安装 MariaDB + 真业务层）。它验证的是"业务层逻辑对"，**不能代替本节的上线验收**。
+
 | # | 检查 | 命令 | 通过标准 |
 |---|---|---|---|
 | 1 | 引擎进程 | `pm2 list` | `im.djnovels.com` online，重启次数不持续增长 |

@@ -301,18 +301,28 @@ def main():
     args = ap.parse_args()
 
     rep = Report()
-    try:
-        print("== 管理台 v2 鉴权 ==")
-        check_admin_gate(rep, args)
-        print("\n== 内部接口凭据与租户隔离 ==")
-        check_internal_credentials(rep, args)
-        print("\n== 租户数据清单 ==")
-        check_inventory(rep, args)
-        print("\n== 消息搜索接口 ==")
-        check_search(rep, args)
-    except ConnectionError as err:
-        print("\n❌ 连接失败：%s" % err)
-        print("   确认业务层/引擎进程在跑，且地址与端口正确。")
+    # 每节独立容错：某个服务没起（比如只部署了业务层）不该让整份验收失败，
+    # 否则运维只能看到一个"连接失败"，其余检查全白跑。
+    sections = [
+        ("管理台 v2 鉴权", check_admin_gate),
+        ("内部接口凭据与租户隔离", check_internal_credentials),
+        ("租户数据清单", check_inventory),
+        ("消息搜索接口", check_search),
+    ]
+    attempted = 0
+    unavailable = 0
+    for title, fn in sections:
+        print("\n== %s ==" % title)
+        attempted += 1
+        try:
+            fn(rep, args)
+        except ConnectionError as err:
+            unavailable += 1
+            rep.skip(title, "服务不可用，整节跳过：%s" % err)
+
+    if attempted and unavailable == attempted:
+        print("\n❌ 所有目标服务都连不上，验收无法进行。")
+        print("   确认业务层（65110）/ 管理台（65109）/ 引擎 API（65101）分别在跑。")
         return 2
 
     print()
