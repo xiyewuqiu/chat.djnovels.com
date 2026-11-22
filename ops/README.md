@@ -296,13 +296,16 @@ location /      { return 404; }                                # 其余一律拒
 cd /www/wwwroot/chat.djnovels.com/chat.djnovels.com
 SERVICE_KEY=$(grep -A1 '^serviceKey' conf/config.yml | tail -1 | awk '{print $2}')
 TENANT_SERVICE_KEY=<从建租户响应里拿到的 service_key>
+APP_SECRET=<该租户的 app_secret，用于给引擎 API 签名>
 
 python3 ops/tools/verify_deploy.py \
   --appkey dz \
+  --app-secret "$APP_SECRET" \
   --platform-key "$SERVICE_KEY" \
   --tenant-key "$TENANT_SERVICE_KEY" \
   --other-appkey <另一个租户的 app_key> \
-  --admin-secret "$ADMIN_SECRET"
+  --admin-secret "$ADMIN_SECRET" \
+  --search-user <一个真实用户> --search-target <一个真实群> --search-channel 2
 ```
 
 判定标准：
@@ -315,11 +318,17 @@ python3 ops/tools/verify_deploy.py \
 | 租户密钥可作用于本租户 | 该租户还没执行 `scope=service_key` 补发，或缓存没失效 |
 | **租户密钥越界必须被拒绝** | **多租户隔离没生效**——这条一旦为 ❌，先停掉对外暴露再排查 `apis/serviceauth.go` |
 | 租户数据清单可用 | 新接口没部署，或 `information_schema` 查询失败 |
+| 搜索接口无签名必须被拒绝 | 网关签名中间件失效，任何人都能拿 appkey 扫别人会话 |
+| 搜索关键词过短必须被拒绝 | 参数校验被绕过，会白扫 500 条消息 |
+| 搜索接口返回预期形状 | 接口部署了但响应结构变了，客户端会解析失败 |
+
+搜索那一节的输出会附带"扫描 N 条候选、命中 M 条"，用来判断接口是活的还是空转。
+它**不验证能否搜到某条具体消息**——那需要库里恰好有匹配内容，属于人工测试。
 
 脚本本身有自测（用假接口验证每条断言会不会判错），改脚本后先跑：
 
 ```bash
-python3 ops/tools/test_verify_deploy.py     # 4 项，应全 ok
+python3 ops/tools/test_verify_deploy.py     # 7 项，应全 ok
 ```
 
 保留期（消息超期不可读）和 webhook 签名不在脚本里：前者需要 8 天前的历史数据，
